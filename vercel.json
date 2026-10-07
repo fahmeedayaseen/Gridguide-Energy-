@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/installer-commissions",
+      "schedule": "0 6 1 * *"
+    },
+    {
+      "path": "/api/cron/invitation-campaigns",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-delivery-jobs",
+      "schedule": "* * * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    },
+    {
+      "source": "/api/events",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-transform"
+        },
+        {
+          "key": "Content-Type",
+          "value": "text/event-stream"
+        },
+        {
+          "key": "X-Accel-Buffering",
+          "value": "no"
+        }
+      ]
+    }
+  ],
+  "regions": [
+    "iad1"
+  ],
+  "env": {
+    "NEXT_PUBLIC_APP_URL": "https://gridguide.ai"
+  },
+  "functions": {
+    "app/api/ai/chat/route.js": {
+      "maxDuration": 60
+    },
+    "app/api/events/route.js": {
+      "maxDuration": 300
+    },
+    "app/api/vpp/payouts/route.js": {
+      "maxDuration": 120
+    },
+    "app/api/cron/route.js": {
+      "maxDuration": 300
+    },
+    "app/api/cron/process-delivery-jobs/route.js": {
+      "maxDuration": 60
+    },
+    "app/api/cron/invitation-campaigns/route.js": {
+      "maxDuration": 30
+    }
+  }
+}
