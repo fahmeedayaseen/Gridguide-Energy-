@@ -1858,6 +1858,8 @@ model Proposal {
   sentAt      DateTime?
   acceptedAt  DateTime?
   declinedAt  DateTime?
+  viewToken          String?   @unique // secure link emailed to the homeowner
+  viewTokenExpiresAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -2969,7 +2971,7 @@ model UnsubscribeToken {
 // ── Durable delivery job — replaces inline HTTP send loop ────────────────────
 model InvitationDeliveryJob {
   id             String    @id @default(cuid())
-  invitationType String // INSTALLER | ENTERPRISE_HOMEOWNER | SELLER_MESSAGE | SELLER_TEAM_INVITE | PARTNER_INVITATION
+  invitationType String // INSTALLER | ENTERPRISE_HOMEOWNER | SELLER_MESSAGE | SELLER_TEAM_INVITE | PARTNER_INVITATION | PROPOSAL
   invitationId   String // InstallerCustomerInvite.id or EnterpriseHomeownerInvite.id
   campaignId     String? // null for standalone invites
   recipientEmail String

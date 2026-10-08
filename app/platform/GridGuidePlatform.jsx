@@ -6554,11 +6554,22 @@ function DashThermostat({user}) {
     setAiOptimize(false);
   };
 
+  // VPP status comes from the same real data DashVPP uses. The thermostat
+  // screen used to show two hard-coded "VPP event today 4–8 PM" banners with
+  // invented earnings (+$12.40 / +$28.40) to every user, enrolled or not.
+  const { enrollment: vppEnrollment, events: vppEvents } = useVppData();
+  const fmtTime = d => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const nextVppEvent = (vppEvents || [])
+    .filter(e => e.windowStart && new Date(e.windowEnd || e.windowStart) >= new Date() && !["CANCELLED","COMPLETED"].includes(e.status))
+    .sort((x, y) => new Date(x.windowStart) - new Date(y.windowStart))[0] || null;
+  const nextEventToday = nextVppEvent && new Date(nextVppEvent.windowStart).toDateString() === new Date().toDateString();
+  const nextEventLabel = nextVppEvent
+    ? `${nextEventToday ? "today" : new Date(nextVppEvent.windowStart).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ${fmtTime(nextVppEvent.windowStart)}${nextVppEvent.windowEnd ? `–${fmtTime(nextVppEvent.windowEnd)}` : ""}`
+    : null;
+
   const aiInsights = [
-    {icon:"zap",color:C.gold,text:"VPP event today 4–8 PM. Pre-cooling to 70°F at 3:30 PM to maximize your earnings while staying comfortable."},
-    {icon:"trending",color:C.green,text:"Your home cools 1°F every 22 minutes. AI is scheduling pre-cool 45 min before peak to hit your comfort target."},
-    {icon:"activity",color:C.teal,text:"Current rate: $0.12/kWh (off-peak). Peak rate starts at 4 PM: $0.38/kWh. AI will minimize HVAC during peak."},
-    {icon:"award",color:C.purple,text:"This month you've saved an estimated $34 in energy costs through AI thermostat optimization."},
+    ...(nextVppEvent ? [{icon:"zap",color:C.gold,text:`Upcoming VPP event ${nextEventLabel}${nextVppEvent.name ? ` (${nextVppEvent.name})` : ""}. With pre-conditioning on, your thermostat can pre-cool or pre-heat beforehand.`}] : []),
+    {icon:"activity",color:C.teal,text:"Shifting heating and cooling away from your utility's peak hours usually lowers bills on time-of-use rates."},
   ];
 
   const compatibleDevices = [
@@ -6710,7 +6721,7 @@ function DashThermostat({user}) {
             </div>
             {aiOptimize&&(
               <div style={{padding:"10px 12px",background:`${C.teal}08`,borderRadius:9,border:`1px solid ${C.teal}20`,fontSize:11,color:"#7A94B8",lineHeight:1.65}}>
-                <span style={{color:C.teal,fontWeight:600}}>AI is active.</span> Next action: Pre-cool to 70°F at 3:30 PM before today's VPP event (4–8 PM). You'll earn an estimated <span style={{color:C.gold,fontWeight:600}}>+$12.40</span> from the event.
+                <span style={{color:C.teal,fontWeight:600}}>AI is active.</span> {nextVppEvent ? `It will pre-condition your home before the VPP event ${nextEventLabel}.` : "It will follow your schedule and comfort settings."}
               </div>
             )}
           </div>
@@ -6803,32 +6814,21 @@ function DashThermostat({user}) {
         </div>
       </div>
 
-      {/* VPP Integration status */}
+      {/* VPP status — real enrollment and next event */}
       <div style={{background:"linear-gradient(135deg,#1C1C28,#1A2030)",border:`1px solid ${C.gold}25`,borderRadius:14,padding:"16px 18px"}}>
-        <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:"#E8EEFF",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-          <Icon name="zap" size={15} color={C.gold}/>VPP Ecosystem — Your Controllable Load
+        <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:"#E8EEFF",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          <Icon name="zap" size={15} color={C.gold}/>Virtual Power Plant
         </div>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
-          {[
-            {icon:"sun",label:"Solar",status:"Producing",value:"4.2 kW",color:C.gold,on:true},
-            {icon:"battery",label:"Battery",status:"Charging",value:"78%",color:C.teal,on:true},
-            {icon:"thermometer",label:"Thermostat",status:"AI Controlled",value:"72°F",color:"#3B82F6",on:true},
-            {icon:"car",label:"EV Charger",status:"Paused (VPP)",value:"Resuming 8PM",color:C.purple,on:false},
-          ].map(d=>(
-            <div key={d.label} style={{padding:"11px 13px",background:d.on?"#252530":"#1A1A22",borderRadius:10,border:`1px solid ${d.on?d.color+"30":"#2A2A38"}`,opacity:d.on?1:0.7}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <Icon name={d.icon} size={16} color={d.on?d.color:"#4A5570"}/>
-                <div style={{width:6,height:6,borderRadius:"50%",background:d.on?d.color:"#4A5570",animation:d.on?"pulse 2s ease infinite":"none"}}/>
-              </div>
-              <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:d.on?"#E8EEFF":"#5A5A7A"}}>{d.value}</div>
-              <div style={{fontSize:10,color:"#5A5A7A",marginTop:2}}>{d.label}</div>
-              <div style={{fontSize:10,color:d.on?d.color:"#4A5570",marginTop:1}}>{d.status}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{padding:"11px 14px",background:`${C.gold}08`,border:`1px solid ${C.gold}20`,borderRadius:9,fontSize:11,color:"#8FA3C0",lineHeight:1.65}}>
-          <span style={{color:C.gold,fontWeight:600}}>VPP event today 4:00–8:00 PM.</span> Your enrolled devices are eligible to participate through your VPP partner program — your thermostat may pre-cool, EV charging may pause, and your battery may discharge per that program's rules. Estimated earnings: <span style={{color:C.green,fontWeight:600}}>+$28.40</span>
-        </div>
+        {!vppEnrollment?(
+          <div style={{fontSize:11,color:"#8FA3C0",lineHeight:1.65}}>You're not enrolled in a VPP program. Enroll from the VPP tab to let your thermostat take part in grid events.</div>
+        ):(
+          <div style={{fontSize:11,color:"#8FA3C0",lineHeight:1.65}}>
+            Enrolled{vppEnrollment.program?.name?` in ${vppEnrollment.program.name}`:""}{vppEnrollment.status&&vppEnrollment.status!=="ACTIVE"?` (${vppEnrollment.status.toLowerCase().replace(/_/g," ")})`:""}.{" "}
+            {nextVppEvent
+              ? <><span style={{color:C.gold,fontWeight:600}}>Next event {nextEventLabel}.</span> Your enrolled devices may pre-cool, pause, or discharge per your program's rules.</>
+              : "No upcoming events scheduled."}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -10488,34 +10488,38 @@ function DashInstallers({user}) {
   const [certified,setCertified]=useState(false);
   const [emergency,setEmergency]=useState(false);
 
-  const DEMO_QUOTES=[
-    {installer:"SunPower Pro Installs",type:"Solar + Battery",date:"Jul 8, 2026",amount:24750,status:"received"},
-    {installer:"GreenEdge Electric",   type:"EV Charger",     date:"Jul 9, 2026",amount:1850, status:"pending"},
-  ];
-  const DEMO_INSTALLERS=[
-    {id:"di1",name:"SunTech Pro Installations",specialties:["Solar","Battery","EV Charger"],rating:4.9,reviews:127,location:"Austin, TX",plan:"Pro",   badge:"Top Rated",   response:"< 2 hrs",verified:true,financing:true, emergency:false,certified:true},
-    {id:"di2",name:"GreenEdge Electric",        specialties:["Solar","Smart Panel","HVAC"],  rating:4.8,reviews:94, location:"Austin, TX",plan:"Pro",   badge:"Fast Response",response:"< 1 hr", verified:true,financing:true, emergency:true, certified:true},
-    {id:"di3",name:"Apex Energy Group",          specialties:["Solar","Battery","Roofing"],   rating:4.9,reviews:312,location:"Austin, TX",plan:"Enterprise",badge:"Partner",response:"< 4 hrs",verified:true,financing:true, emergency:false,certified:true},
-    {id:"di4",name:"ChargeForward EV",           specialties:["EV Charger","Smart Panel"],    rating:4.8,reviews:88, location:"Austin, TX",plan:"Pro",   badge:"EV Expert",   response:"Same day",verified:true,financing:false,emergency:true, certified:true},
-    {id:"di5",name:"SolarFirst Installs",        specialties:["Solar"],                       rating:4.6,reviews:34, location:"Austin, TX",plan:"Free",  badge:"",            response:"1-2 days",verified:true,financing:false,emergency:false,certified:false},
-    {id:"di6",name:"Bright Battery Co",          specialties:["Battery"],                     rating:4.7,reviews:52, location:"Austin, TX",plan:"Pro",   badge:"Battery Spec",response:"< 3 hrs",verified:true,financing:true, emergency:false,certified:true},
-  ];
-
+  // Real verified installers from the public directory API (GET /api/installers).
+  // Previously this listed six made-up companies with made-up ratings.
+  const [dirInstallers,setDirInstallers]=useState([]);
+  const [dirLoading,setDirLoading]=useState(true);
+  const [dirErr,setDirErr]=useState("");
   const SERVICE_MAP={"All Services":"","Solar":"Solar","Battery":"Battery","EV Charger":"EV Charger","HVAC":"HVAC","Roofing":"Roofing","Smart Home":"Smart Panel"};
-  const filteredInstallers=DEMO_INSTALLERS.filter(inst=>{
+  useEffect(()=>{
+    setDirLoading(true);setDirErr("");
     const svc=SERVICE_MAP[serviceFilter]||"";
-    if(svc&&!inst.specialties.some(s=>s.toLowerCase().includes(svc.toLowerCase()))) return false;
-    if(financing&&!inst.financing) return false;
+    const qs=new URLSearchParams({limit:"50",...(svc?{specialty:svc}:{} )});
+    fetch(`/api/installers?${qs}`,{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not load installers");return d;})
+      .then(d=>setDirInstallers((d.installers||[]).map(i=>({
+        id:i.id, name:i.companyName, specialties:i.specialties||[], rating:i.reviewCount?Number(i.rating||0).toFixed(1):"New",
+        ratingNum:Number(i.rating||0), reviews:i.reviewCount||0, location:(i.serviceAreas||[])[0]||"Service area not listed",
+        plan:({FREE:"Free",PRO:"Pro",ENTERPRISE:"Enterprise"})[i.plan]||"Free", badge:i.nabcepCertified?"NABCEP":"",
+        response:`${i.jobsCompleted||0} jobs completed`, verified:true, certified:!!i.nabcepCertified,
+      }))))
+      .catch(e=>{setDirInstallers([]);setDirErr(e.message);})
+      .finally(()=>setDirLoading(false));
+  },[serviceFilter]);
+
+  const filteredInstallers=dirInstallers.filter(inst=>{
     if(certified&&!inst.certified) return false;
-    if(emergency&&!inst.emergency) return false;
     if(ratingFilter!=="Any Rating"){
       const minRating=parseFloat(ratingFilter);
-      if(inst.rating<minRating) return false;
+      if(!(inst.reviews>0&&inst.ratingNum>=minRating)) return false;
     }
     return true;
   });
 
-  const quotes = (user.quotes&&user.quotes.length>0) ? user.quotes : DEMO_QUOTES;
+  const quotes = Array.isArray(user.quotes) ? user.quotes : [];
 
   const openSurvey=(q)=>{setSurveyModal(q);setSurveyStep("pick");setSurveyDate("");setSurveyNotes("");};
   const openChanges=(q)=>{setChangesModal(q);setChangesText("");setChangesSent(false);};
@@ -10753,9 +10757,7 @@ function DashInstallers({user}) {
             </select>
           ))}
           {[
-            {label:"Financing Available",icon:"💳",state:financing, set:setFinancing},
-            {label:"Certified Installer",icon:"✓", state:certified, set:setCertified},
-            {label:"Emergency Service",  icon:"🚨",state:emergency, set:setEmergency},
+            {label:"NABCEP Certified",icon:"✓", state:certified, set:setCertified},
           ].map(({label,icon,state,set})=>(
             <button key={label} onClick={()=>set(s=>!s)}
               style={{padding:"7px 12px",borderRadius:8,fontSize:10,fontWeight:500,cursor:"pointer",
@@ -10768,7 +10770,11 @@ function DashInstallers({user}) {
       </DCard>
 
       {/* Installer directory — filtered */}
-      {filteredInstallers.length===0?(
+      {dirLoading?(
+        <div style={{fontSize:11,color:"#8890A8",padding:"16px 0"}}>Loading installers…</div>
+      ):dirErr?(
+        <div style={{fontSize:11,color:"#FF4D6A",padding:"16px 0"}}>{dirErr}</div>
+      ):filteredInstallers.length===0?(
         <DCard style={{marginBottom:14,textAlign:"center",padding:"28px 24px",background:`${C.teal}06`,border:`1px solid ${C.teal}20`}}>
           <div style={{fontSize:28,marginBottom:12}}>🔍</div>
           <div style={{fontFamily:"'Space Grotesk'",fontSize:14,fontWeight:700,color:"#E8EEFF",marginBottom:6}}>No installers match your filters</div>
@@ -10777,7 +10783,7 @@ function DashInstallers({user}) {
           </p>
           <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
             <Btn variant="teal" onClick={()=>setOpen(true)}>Request a Quote →</Btn>
-            <Btn variant="ghost" onClick={()=>{setServiceFilter("All Services");setRatingFilter("Any Rating");setFinancing(false);setCertified(false);setEmergency(false);}}>Clear Filters</Btn>
+            <Btn variant="ghost" onClick={()=>{setServiceFilter("All Services");setRatingFilter("Any Rating");setCertified(false);}}>Clear Filters</Btn>
           </div>
         </DCard>
       ):(
@@ -13505,24 +13511,12 @@ function SellerComms({seller}) {
     else setMsg({type:"error",text:d.error||"Failed"});
   };
 
-  // Demo data
-  const DEMO_CAMPS=[
-    {id:"c1",name:"Summer Solar Deals",subject:"Exclusive deals for our customers",status:"SENT",type:"PROMOTIONAL_CAMPAIGN",recipientCount:89,sentCount:89,openedCount:34,clickedCount:12,failedCount:2,createdAt:"2026-07-01"},
-    {id:"c2",name:"New Battery Inventory",subject:"Enphase IQ 5P — back in stock",status:"DRAFT",type:"BACK_IN_STOCK",recipientCount:0,sentCount:0,openedCount:0,clickedCount:0,failedCount:0,createdAt:"2026-07-10"},
-  ];
-  const DEMO_CUSTS=[
-    {id:"cu1",email:"sarah@email.com",firstName:"Sarah",lastName:"M.",marketingOptIn:true,totalOrders:2,lifetimeValue:5200,lastOrderAt:"2026-06-15"},
-    {id:"cu2",email:"james@email.com",firstName:"James",lastName:"T.",marketingOptIn:true,totalOrders:1,lifetimeValue:699,lastOrderAt:"2026-07-01"},
-    {id:"cu3",email:"ana@email.com",  firstName:"Ana",  lastName:"R.",marketingOptIn:false,totalOrders:1,lifetimeValue:249,lastOrderAt:"2026-05-20"},
-  ];
-  const DEMO_QUOTES=[
-    {id:"q1",quoteNumber:"Q-ABCD-XY1",customer:{firstName:"Sarah",email:"sarah@email.com"},status:"SENT",total:7800,expiresAt:"2026-07-25",sentAt:"2026-07-10",viewedAt:"2026-07-11"},
-    {id:"q2",quoteNumber:"Q-ABCD-XY2",customer:{firstName:"James",email:"james@email.com"},status:"ACCEPTED",total:1299,acceptedAt:"2026-07-08"},
-  ];
-
-  const displayCamps  = campaigns.length>0  ? campaigns  : DEMO_CAMPS;
-  const displayCusts  = customers.length>0  ? customers  : DEMO_CUSTS;
-  const displayQuotes = quotes.length>0     ? quotes     : DEMO_QUOTES;
+  // Real data only. The old fallback showed fake campaigns, customers
+  // (with email addresses) and quotes whenever a list was empty, so a new
+  // seller could see — and target — customers that don't exist.
+  const displayCamps  = campaigns;
+  const displayCusts  = customers;
+  const displayQuotes = quotes;
 
   const optInCount    = displayCusts.filter(c=>c.marketingOptIn).length;
   const totalRevenue  = displayCusts.reduce((s,c)=>s+(c.lifetimeValue||0),0);
@@ -13996,67 +13990,7 @@ const INST_NAV=[
   {id:"view-site",    icon:"globe",   label:"View GridGuide Site", group:"Account",link:"e-home"},
   {id:"view-marketplace",icon:"store",  label:"Browse Marketplace",   group:"Account",link:"ai-market"},
 ];
-const IDATA = {
-  profile: {
-    id: "inst-demo-001",
-    company_name: "SunTech Pro Installations",
-    owner_name: "Marcus Johnson",
-    email: "marcus@suntechpro.com",
-    phone: "(512) 555-0182",
-    website: "www.suntechpro.com",
-    status: "active",
-    membership_plan: "pro",
-    rating: 4.9,
-    service_radius_miles: 50,
-    certifications: ["NABCEP PV Installation","Tesla Powerwall Certified","Enphase Certified Installer"],
-    service_zones: ["Austin, TX","Round Rock, TX","Cedar Park, TX","Pflugerville, TX"],
-  },
-  leads: [
-    {id:"L001",customer:"Sarah M.",    location:"Austin, TX",     type:"Solar + Battery",budget:"$18–24k",received:"2 hrs ago",  status:"new",      notes:"Wants 10kW solar + Powerwall. HOA approval needed. Prefers weekend survey.",phone:"(512) 555-0291",email:"sarah.m@email.com",source:"GridGuide Search"},
-    {id:"L002",customer:"James T.",    location:"Round Rock, TX", type:"EV Charger",     budget:"$1–2k",  received:"Yesterday",  status:"contacted", notes:"Level 2 charger for Tesla Model Y. Garage install. Flexible on timing.",phone:"(512) 555-0374",email:"james.t@email.com",source:"GridGuide Search"},
-    {id:"L003",customer:"Rivera Family",location:"Cedar Park, TX",type:"Solar Only",     budget:"$12–16k",received:"2 days ago", status:"quoted",    notes:"8kW system, south-facing roof. Already have Powerwall. Net metering interest.",phone:"(512) 555-0421",email:"rivera@email.com",source:"GridGuide Referral"},
-    {id:"L004",customer:"Carol W.",    location:"Pflugerville, TX",type:"Smart Panel",   budget:"$3–5k",  received:"3 days ago", status:"scheduled", notes:"200A panel upgrade + solar prep. Has old Federal Pacific panel.",phone:"(512) 555-0538",email:"carol.w@email.com",source:"GridGuide Search"},
-  ],
-  jobs: [
-    {id:"J001",customer:"Kim & Dave R.",address:"1842 Oak Trail, Austin TX",type:"Solar + Battery",size:"9.6kW + Powerwall 3",status:"scheduled",  permitStatus:"approved",icStatus:"approved",   scheduledDate:"Jul 18, 2026",value:22400,notes:"System design finalized. Permits pulled. Roof in good condition."},
-    {id:"J002",customer:"Hernandez LLC",address:"450 Commerce Dr, Round Rock TX",type:"Commercial Solar",size:"48kW",status:"in_progress",permitStatus:"approved",icStatus:"waiting",scheduledDate:"Jul 14-16, 2026",value:68000,notes:"Day 2 of 3-day installation. Inverter mounting complete."},
-    {id:"J003",customer:"Mike T.",      address:"724 Willow Bend, Cedar Park TX",type:"EV Charger",    size:"Level 2 50A",  status:"completed",  permitStatus:"approved",icStatus:"not_required",scheduledDate:"Jul 10, 2026",value:1850,notes:"ChargePoint Home Flex installed. Customer satisfied."},
-    {id:"J004",customer:"Ana & Tom S.", address:"982 Sunset Blvd, Pflugerville TX",type:"Battery Only",size:"Enphase IQ5P",status:"pending",    permitStatus:"pending", icStatus:"not_started",scheduledDate:"Jul 22, 2026",value:9200,notes:"Waiting on HOA approval for battery install."},
-  ],
-  proposals: [
-    {id:"P001",customer:"Walker Family",date:"Jul 11, 2026",type:"Solar + Battery",amount:26800,status:"sent",     notes:"10.4kW Enphase + IQ Battery 5P x2. 30% ITC applied."},
-    {id:"P002",customer:"Nguyen, Tom",  date:"Jul 9, 2026", type:"Solar Only",     amount:14200,status:"accepted", notes:"7.2kW SunPower system. Signed. Scheduling pending permit."},
-    {id:"P003",customer:"Brooks RE",   date:"Jul 7, 2026", type:"Commercial",     amount:85000,status:"draft",    notes:"24kW system for office park. Needs structural review."},
-    {id:"P004",customer:"Lin, Jessica", date:"Jul 5, 2026", type:"EV Charger",    amount:1650, status:"declined", notes:"Customer chose another installer — price."},
-    {id:"P005",customer:"Patel Family", date:"Jul 3, 2026", type:"Solar + Battery",amount:31400,status:"sent",    notes:"12kW + Tesla Powerwall 3. HOA approved. Awaiting customer sign-off."},
-  ],
-  interconnection: [
-    {id:"IC001",customer:"Nguyen, Tom",  utility:"Austin Energy",system:"7.2kW Solar",     submitted:"Jul 1, 2026",  status:"approved", approvalDate:"Jul 9, 2026",  notes:"PTO received. System active."},
-    {id:"IC002",customer:"Kim & Dave R.",utility:"Austin Energy",system:"9.6kW + Battery",  submitted:"Jun 28, 2026", status:"pending",  approvalDate:null,           notes:"Application under review. Est. 15 business days."},
-    {id:"IC003",customer:"Hernandez LLC",utility:"Oncor",        system:"48kW Commercial",  submitted:"Jun 15, 2026", status:"approved", approvalDate:"Jul 2, 2026",  notes:"Approved. Inspection scheduled Jul 14."},
-    {id:"IC004",customer:"Chen, Alice",  utility:"Austin Energy",system:"5.1kW Solar",     submitted:"Jul 8, 2026",  status:"pending",  approvalDate:null,           notes:"Submitted online. Reference #AE-2026-4491."},
-  ],
-  payouts: [
-    {id:"PO001",period:"Jun 2026",amount:3240,status:"paid",    type:"Commission",date:"Jul 1, 2026", description:"Recurring commission — 43 active homeowner subscriptions"},
-    {id:"PO002",period:"Jun 2026",amount:1850,status:"paid",    type:"Job",       date:"Jul 5, 2026", description:"EV charger install — Mike T."},
-    {id:"PO003",period:"May 2026",amount:2980,status:"paid",    type:"Commission",date:"Jun 1, 2026", description:"Recurring commission — 41 active homeowner subscriptions"},
-    {id:"PO004",period:"Jul 2026",amount:3400,status:"pending", type:"Commission",date:"Aug 1, 2026", description:"Recurring commission — est. 45 subscriptions (pending close)"},
-  ],
-  reviews: [
-    {customer:"Sarah K.",   date:"Jul 8, 2026",  rating:5,text:"Marcus and his team were incredibly professional. They explained every step, cleaned up perfectly, and the system has been performing above estimates since day one."},
-    {customer:"Tom N.",     date:"Jun 29, 2026", rating:5,text:"From permit to PTO in 18 days. The GridGuide dashboard made it so easy to track the project. Highly recommend SunTech."},
-    {customer:"Rivera Fam.",date:"Jun 22, 2026", rating:5,text:"Third solar installer I've talked to, first one who really understood our utility plan and how to maximize our savings. Worth every dollar."},
-    {customer:"Mike T.",    date:"Jun 10, 2026", rating:5,text:"Charger installed in 3 hours, city inspection passed same week. Couldn't have been smoother."},
-    {customer:"Alice C.",   date:"Jun 3, 2026",  rating:4,text:"Great install, took a bit longer than originally quoted but the quality of work is excellent. Would use again."},
-  ],
-  earnings: [
-    {period:"Jun 2026",jobs:8, revenue:68400,commission:6840, net:61560,status:"paid"},
-    {period:"May 2026",jobs:6, revenue:52200,commission:5220, net:46980,status:"paid"},
-    {period:"Apr 2026",jobs:9, revenue:74800,commission:7480, net:67320,status:"paid"},
-    {period:"Mar 2026",jobs:5, revenue:41600,commission:4160, net:37440,status:"paid"},
-    {period:"Feb 2026",jobs:7, revenue:59300,commission:5930, net:53370,status:"paid"},
-  ],
-};
+// (IDATA demo constants removed — installer screens load real data from /api/installers/*.)
 
 const INST_PLANS = {
   FREE: {
@@ -14124,28 +14058,99 @@ function ReferralToolButtons({plan,T,openModal}) {
 
 function InstProposals() {
   const {isMobile} = usePBP();
-  const [selected, setSelected] = useState(null);
+  const [proposals,setProposals]=useState([]);
+  const [leads,setLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [selectedId, setSelectedId] = useState(null);
   const [filter, setFilter] = useState("all");
-  const STATUS_COLOR = {sent:"#60A5FA", draft:SH.gold, accepted:SH.green, declined:SH.red};
+  const [creating,setCreating]=useState(false);
+  const [form,setForm]=useState({leadId:"",title:"",amount:"",notes:"",validUntil:""});
+  const [busy,setBusy]=useState("");
+  const [msg,setMsg]=useState({type:"",text:""});
+  const STATUS_COLOR = {sent:"#60A5FA", draft:SH.gold, accepted:SH.green, declined:SH.red, expired:T_I.dim};
 
-  const filtered = IDATA.proposals.filter(p => filter === "all" || p.status === filter);
-  const totalSent = IDATA.proposals.filter(p => p.status !== "draft").reduce((a,p) => a+p.amount, 0);
-  const totalAccepted = IDATA.proposals.filter(p => p.status === "accepted").reduce((a,p) => a+p.amount, 0);
+  const getJson=async(url,opts)=>{const r=await fetch(url,{credentials:"include",...opts});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;};
+  const load=useCallback(()=>{
+    setLoading(true);setLoadErr("");
+    Promise.all([getJson("/api/installers/proposals"),getJson("/api/installers/leads").catch(()=>({leads:[]}))])
+      .then(([p,l])=>{setProposals(p.proposals||[]);setLeads((l.leads||[]).filter(x=>!["CONVERTED","LOST"].includes(x.status)));})
+      .catch(e=>{setProposals([]);setLoadErr(e.message);})
+      .finally(()=>setLoading(false));
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const rows=proposals.map(p=>({...p,st:(p.status||"").toLowerCase(),customer:p.lead?.customerName||"Customer"}));
+  const filtered = rows.filter(p => filter === "all" || p.st === filter);
+  const selected = rows.find(p=>p.id===selectedId)||null;
+  const totalSent = rows.filter(p => p.st !== "draft").reduce((a,p) => a+(p.amount||0), 0);
+  const totalAccepted = rows.filter(p => p.st === "accepted").reduce((a,p) => a+(p.amount||0), 0);
+  const fmt=d=>d?new Date(d).toLocaleDateString():null;
+
+  const create=async()=>{
+    const amount=parseFloat(form.amount);
+    if(!form.leadId||!form.title.trim()||!(amount>0)){setMsg({type:"error",text:"Choose a lead, add a title, and enter an amount."});return;}
+    setBusy("create");setMsg({type:"",text:""});
+    try{
+      await getJson("/api/installers/proposals",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({leadId:form.leadId,title:form.title.trim(),amount,notes:form.notes||undefined,validUntil:form.validUntil?new Date(form.validUntil).toISOString():undefined})});
+      setCreating(false);setForm({leadId:"",title:"",amount:"",notes:"",validUntil:""});setMsg({type:"ok",text:"Draft proposal created."});load();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setBusy("");
+  };
+  const update=async(p,status)=>{
+    setBusy(status);setMsg({type:"",text:""});
+    try{
+      await getJson(`/api/installers/proposals?id=${encodeURIComponent(p.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+      setMsg({type:"ok",text:status==="SENT"?`Proposal emailed to ${p.customer}.`:status==="ACCEPTED"?"Marked accepted — a job was added to your Jobs tab.":"Proposal updated."});load();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setBusy("");
+  };
+  const remove=async(p)=>{
+    if(!window.confirm("Delete this draft?")) return;
+    setBusy("delete");
+    try{await getJson(`/api/installers/proposals?id=${encodeURIComponent(p.id)}`,{method:"DELETE"});setSelectedId(null);load();}
+    catch(e){setMsg({type:"error",text:e.message});}
+    setBusy("");
+  };
+  const inputStyle={width:"100%",boxSizing:"border-box",background:T_I.hi,border:`1px solid ${T_I.bord}`,borderRadius:8,padding:"8px 10px",fontSize:12,color:T_I.text,marginBottom:10};
 
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
         <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Proposals</h1>
-        <Btn T={T_I} sz="sm"><Ic n="plus" s={12} c="#0A0F1E"/>New Proposal</Btn>
+        <Btn T={T_I} sz="sm" onClick={()=>{setCreating(c=>!c);setMsg({type:"",text:""});}}><Ic n="plus" s={12} c="#0A0F1E"/>New Proposal</Btn>
       </div>
 
-      {/* Stats */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:18}}>
+      {msg.text&&<div style={{marginBottom:12,fontSize:11,color:msg.type==="error"?SH.red:SH.teal}}>{msg.text}</div>}
+
+      {creating&&(
+        <Card T={T_I} title="New Proposal">
+          {leads.length===0?(
+            <div style={{fontSize:11,color:T_I.muted}}>You need an open lead to create a proposal. Leads appear on the Leads tab.</div>
+          ):(<>
+            <select value={form.leadId} onChange={e=>setForm(f=>({...f,leadId:e.target.value}))} style={inputStyle}>
+              <option value="">Choose a lead…</option>
+              {leads.map(l=><option key={l.id} value={l.id}>{l.customerName} · {l.projectType}</option>)}
+            </select>
+            <input placeholder="Title (e.g. 8 kW solar + battery)" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} style={inputStyle}/>
+            <input placeholder="Amount (USD)" type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} style={inputStyle}/>
+            <label style={{fontSize:10,color:T_I.muted}}>Valid until (optional)</label>
+            <input type="date" value={form.validUntil} onChange={e=>setForm(f=>({...f,validUntil:e.target.value}))} style={inputStyle}/>
+            <textarea rows={3} placeholder="Notes for the homeowner (optional)" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} style={{...inputStyle,resize:"vertical"}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn T={T_I} sz="sm" disabled={busy==="create"} onClick={create}>{busy==="create"?"Saving…":"Save Draft"}</Btn>
+              <Btn T={T_I} sz="sm" v="ghost" onClick={()=>setCreating(false)}>Cancel</Btn>
+            </div>
+          </>)}
+        </Card>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,margin:"18px 0"}}>
         {[
-          {l:"Total Proposals",v:IDATA.proposals.length,               c:SH.teal},
-          {l:"Sent",           v:IDATA.proposals.filter(p=>p.status==="sent").length,     c:"#60A5FA"},
-          {l:"Accepted Value", v:`$${totalAccepted.toLocaleString()}`,  c:SH.green},
-          {l:"Pipeline Value", v:`$${totalSent.toLocaleString()}`,      c:SH.gold},
+          {l:"Total Proposals",v:rows.length,                                  c:SH.teal},
+          {l:"Sent",           v:rows.filter(p=>p.st==="sent").length,          c:"#60A5FA"},
+          {l:"Accepted Value", v:`$${totalAccepted.toLocaleString()}`,         c:SH.green},
+          {l:"Pipeline Value", v:`$${totalSent.toLocaleString()}`,             c:SH.gold},
         ].map(s=>(
           <div key={s.l} style={{background:T_I.card,border:`1px solid ${s.c}20`,borderRadius:12,padding:"13px 15px"}}>
             <div style={{fontFamily:"'Space Grotesk'",fontSize:19,fontWeight:700,color:s.c}}>{s.v}</div>
@@ -14154,9 +14159,8 @@ function InstProposals() {
         ))}
       </div>
 
-      {/* Filter */}
       <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {["all","draft","sent","accepted"].map(f=>(
+        {["all","draft","sent","accepted","declined"].map(f=>(
           <button key={f} onClick={()=>setFilter(f)}
             style={{padding:"5px 12px",borderRadius:7,fontSize:10,fontWeight:600,cursor:"pointer",
               background:filter===f?(STATUS_COLOR[f]||SH.teal):"transparent",
@@ -14170,52 +14174,56 @@ function InstProposals() {
 
       <div style={{display:"grid",gridTemplateColumns:selected&&!isMobile?"1fr 340px":"1fr",gap:14}}>
         <Card T={T_I} pad={false}>
-          {filtered.map(p=>(
-            <div key={p.id} onClick={()=>setSelected(selected?.id===p.id?null:p)}
+          {loading?<div style={{padding:24,textAlign:"center",fontSize:11,color:T_I.muted}}>Loading proposals…</div>
+          :loadErr?<div style={{padding:24,textAlign:"center",fontSize:11,color:SH.red}}>{loadErr} <button onClick={load} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>
+          :filtered.length===0?<div style={{padding:24,textAlign:"center",fontSize:11,color:T_I.muted}}>{rows.length===0?"No proposals yet. Create one from an open lead.":"No proposals in this status."}</div>
+          :filtered.map(p=>(
+            <div key={p.id} onClick={()=>setSelectedId(selectedId===p.id?null:p.id)}
               style={{padding:"14px 16px",borderBottom:`1px solid ${T_I.bord}22`,cursor:"pointer",
-                background:selected?.id===p.id?`${STATUS_COLOR[p.status]}08`:"transparent",
-                borderLeft:`3px solid ${selected?.id===p.id?STATUS_COLOR[p.status]:"transparent"}`,transition:"all .15s"}}>
+                background:selectedId===p.id?`${STATUS_COLOR[p.st]||SH.teal}08`:"transparent",
+                borderLeft:`3px solid ${selectedId===p.id?(STATUS_COLOR[p.st]||SH.teal):"transparent"}`,transition:"all .15s"}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div>
                   <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:T_I.text}}>{p.title}</div>
-                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{p.homeowner_name} · {p.id}</div>
+                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{p.customer}{p.lead?.projectType?` · ${p.lead.projectType}`:""}</div>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:SH.gold}}>${(p.amount||0).toLocaleString()}</span>
-                  <Badge color={STATUS_COLOR[p.status]}>{p.status}</Badge>
+                  <Badge color={STATUS_COLOR[p.st]||T_I.dim}>{p.st}</Badge>
                 </div>
               </div>
-              {p.notes&&<div style={{fontSize:10,color:T_I.dim,marginTop:6,fontStyle:"italic"}}>{p.notes}</div>}
               <div style={{fontSize:10,color:T_I.muted,marginTop:5}}>
-                {p.sent_at?`Sent ${p.sent_at}`:"Draft — not yet sent"}
-                {p.accepted_at&&<span style={{color:SH.green}}> · Accepted {p.accepted_at}</span>}
+                {p.sentAt?`Sent ${fmt(p.sentAt)}`:"Draft — not yet sent"}
+                {p.acceptedAt&&<span style={{color:SH.green}}> · Accepted {fmt(p.acceptedAt)}</span>}
               </div>
             </div>
           ))}
         </Card>
 
         {selected&&(
-          <Card T={T_I} title={selected.homeowner_name}>
+          <Card T={T_I} title={selected.customer}>
             <div style={{background:T_I.hi,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
               {[
                 ["Proposal",  selected.title],
-                ["Amount",    `$${selected.amount.toLocaleString()}`],
-                ["Status",    selected.status],
-                ["Sent",      selected.sent_at||"Not sent"],
-                ["Accepted",  selected.accepted_at||"—"],
+                ["Amount",    `$${(selected.amount||0).toLocaleString()}`],
+                ["Status",    selected.st],
+                ["Sent",      fmt(selected.sentAt)||"Not sent"],
+                ["Valid until",fmt(selected.validUntil)||"—"],
+                ["Accepted",  fmt(selected.acceptedAt)||"—"],
               ].map(([k,v])=>(
-                <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
+                <div key={k} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
                   <span style={{color:T_I.muted}}>{k}</span>
-                  <span style={{color:T_I.text,fontWeight:500}}>{v}</span>
+                  <span style={{color:T_I.text,fontWeight:500,textAlign:"right"}}>{v}</span>
                 </div>
               ))}
             </div>
             {selected.notes&&<div style={{padding:"9px 11px",background:T_I.hi,borderRadius:8,fontSize:11,color:T_I.muted,lineHeight:1.6,marginBottom:14,fontStyle:"italic"}}>"{selected.notes}"</div>}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {selected.status==="draft"&&<Btn T={T_I} full><Ic n="mail" s={13} c="#0A0F1E"/>Send to Homeowner</Btn>}
-              {selected.status==="sent"&&<Btn T={T_I} v="outline" full><Ic n="file" s={13} c={T_I.muted}/>View Proposal PDF</Btn>}
-              <Btn T={T_I} v="outline" full><Ic n="file" s={13} c={T_I.muted}/>Edit Proposal</Btn>
-              <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:T_I.dim,fontSize:11,cursor:"pointer",padding:"4px"}}>Close</button>
+              {selected.st==="draft"&&<Btn T={T_I} full disabled={!!busy} onClick={()=>update(selected,"SENT")}><Ic n="mail" s={13} c="#0A0F1E"/>{busy==="SENT"?"Sending…":"Email to Homeowner"}</Btn>}
+              {selected.st==="sent"&&<Btn T={T_I} full disabled={!!busy} onClick={()=>update(selected,"ACCEPTED")}><Ic n="check" s={13} c="#0A0F1E"/>{busy==="ACCEPTED"?"Saving…":"Mark Accepted"}</Btn>}
+              {selected.st==="sent"&&<Btn T={T_I} v="outline" full disabled={!!busy} onClick={()=>update(selected,"DECLINED")}>{busy==="DECLINED"?"Saving…":"Mark Declined"}</Btn>}
+              {selected.st==="draft"&&<Btn T={T_I} v="ghost" full disabled={!!busy} onClick={()=>remove(selected)}>Delete Draft</Btn>}
+              <button onClick={()=>setSelectedId(null)} style={{background:"none",border:"none",color:T_I.dim,fontSize:11,cursor:"pointer",padding:"4px"}}>Close</button>
             </div>
           </Card>
         )}
@@ -14226,20 +14234,45 @@ function InstProposals() {
 
 function InstInterconnection() {
   const {isMobile} = usePBP();
-  const [done, setDone] = useState({});
+  const {jobs}=useInstallerJobs();
+  const [data,setData]=useState({tasks:[],byJob:[],stats:null});
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [busyId,setBusyId]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [form,setForm]=useState({jobId:"",utilityName:"",taskName:"",taskType:"OTHER",dueDate:""});
+  const [msg,setMsg]=useState({type:"",text:""});
 
-  const STATUS_COLOR = {pending:SH.gold, waiting:"#60A5FA", completed:SH.green, rejected:SH.red};
-  const STATUS_ICON  = {pending:"clock", waiting:"refresh", completed:"check", rejected:"x"};
+  const STATUS_COLOR = {pending:SH.gold, waiting:"#60A5FA", not_started:T_I.dim, approved:SH.green, completed:SH.green, rejected:SH.red, not_required:SH.teal};
+  const TASK_TYPES=[["APPLICATION","Interconnection application"],["ONE_LINE_DIAGRAM","One-line diagram"],["PERMIT_SUBMISSION","Permit submission"],["PERMIT_INSPECTION","Permit inspection"],["NET_METERING","Net metering"],["APPROVAL_TO_OPERATE","Permission to operate"],["OTHER","Other"]];
 
-  const byJob = IDATA.interconnection.reduce((acc, t) => {
-    const key = t.job_id;
-    if(!acc[key]) acc[key] = {job_id:t.job_id, homeowner_name:t.homeowner_name, utility_name:t.utility_name, tasks:[]};
-    acc[key].tasks.push(t);
-    return acc;
-  }, {});
+  const getJson=async(url,opts)=>{const r=await fetch(url,{credentials:"include",...opts});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;};
+  const load=useCallback(()=>{
+    setLoading(true);setLoadErr("");
+    getJson("/api/installers/interconnection")
+      .then(d=>setData({tasks:d.tasks||[],byJob:d.byJob||[],stats:d.stats||null}))
+      .catch(e=>{setData({tasks:[],byJob:[],stats:null});setLoadErr(e.message);})
+      .finally(()=>setLoading(false));
+  },[]);
+  useEffect(()=>{load();},[load]);
 
-  const pending = IDATA.interconnection.filter(t => t.status !== "completed").length;
-  const complete = IDATA.interconnection.filter(t => t.status === "completed").length;
+  const complete=async(task)=>{
+    setBusyId(task.id);
+    try{await getJson(`/api/installers/interconnection?id=${encodeURIComponent(task.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"COMPLETED"})});load();}
+    catch(e){setMsg({type:"error",text:e.message});}
+    setBusyId(null);
+  };
+  const add=async()=>{
+    if(!form.utilityName.trim()||!form.taskName.trim()){setMsg({type:"error",text:"Utility and task name are required."});return;}
+    setBusyId("add");setMsg({type:"",text:""});
+    try{
+      await getJson("/api/installers/interconnection",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobId:form.jobId||undefined,utilityName:form.utilityName.trim(),taskName:form.taskName.trim(),taskType:form.taskType,dueDate:form.dueDate?new Date(form.dueDate).toISOString():undefined})});
+      setAdding(false);setForm({jobId:"",utilityName:"",taskName:"",taskType:"OTHER",dueDate:""});setMsg({type:"ok",text:"Task added."});load();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setBusyId(null);
+  };
+  const inputStyle={width:"100%",boxSizing:"border-box",background:T_I.hi,border:`1px solid ${T_I.bord}`,borderRadius:8,padding:"8px 10px",fontSize:12,color:T_I.text,marginBottom:10};
+  const utilities=[...new Set(data.tasks.map(t=>t.utilityName).filter(Boolean))].length;
 
   return (
     <div>
@@ -14248,15 +14281,37 @@ function InstInterconnection() {
           <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Utility Interconnection</h1>
           <p style={{fontSize:11,color:T_I.muted,marginTop:2}}>Track permit & interconnection tasks per job</p>
         </div>
-        <Btn T={T_I} sz="sm"><Ic n="plus" s={12} c="#0A0F1E"/>Add Task</Btn>
+        <Btn T={T_I} sz="sm" onClick={()=>setAdding(a=>!a)}><Ic n="plus" s={12} c="#0A0F1E"/>Add Task</Btn>
       </div>
 
-      {/* Stats */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:18}}>
+      {msg.text&&<div style={{marginBottom:12,fontSize:11,color:msg.type==="error"?SH.red:SH.teal}}>{msg.text}</div>}
+
+      {adding&&(
+        <Card T={T_I} title="New Task">
+          <select value={form.jobId} onChange={e=>setForm(f=>({...f,jobId:e.target.value}))} style={inputStyle}>
+            <option value="">No job (general)</option>
+            {jobs.map(j=><option key={j.id} value={j.id}>{j.title}</option>)}
+          </select>
+          <input placeholder="Utility (e.g. Duke Energy)" value={form.utilityName} onChange={e=>setForm(f=>({...f,utilityName:e.target.value}))} style={inputStyle}/>
+          <input placeholder="Task name" value={form.taskName} onChange={e=>setForm(f=>({...f,taskName:e.target.value}))} style={inputStyle}/>
+          <select value={form.taskType} onChange={e=>setForm(f=>({...f,taskType:e.target.value}))} style={inputStyle}>
+            {TASK_TYPES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+          <label style={{fontSize:10,color:T_I.muted}}>Due date (optional)</label>
+          <input type="date" value={form.dueDate} onChange={e=>setForm(f=>({...f,dueDate:e.target.value}))} style={inputStyle}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn T={T_I} sz="sm" disabled={busyId==="add"} onClick={add}>{busyId==="add"?"Saving…":"Add Task"}</Btn>
+            <Btn T={T_I} sz="sm" v="ghost" onClick={()=>setAdding(false)}>Cancel</Btn>
+          </div>
+        </Card>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,margin:"18px 0"}}>
         {[
-          {l:"Active Tasks",   v:pending,                              c:SH.gold},
-          {l:"Completed",      v:complete,                             c:SH.green},
-          {l:"Utilities",      v:[...new Set(IDATA.interconnection.map(t=>t.utility_name))].length, c:SH.teal},
+          {l:"Open Tasks", v:data.stats?.pending??0,   c:SH.gold},
+          {l:"Overdue",    v:data.stats?.overdue??0,   c:SH.red},
+          {l:"Completed",  v:data.stats?.completed??0, c:SH.green},
+          {l:"Utilities",  v:utilities,                c:SH.teal},
         ].map(s=>(
           <div key={s.l} style={{background:T_I.card,border:`1px solid ${s.c}20`,borderRadius:12,padding:"13px 15px"}}>
             <div style={{fontFamily:"'Space Grotesk'",fontSize:19,fontWeight:700,color:s.c}}>{s.v}</div>
@@ -14265,29 +14320,34 @@ function InstInterconnection() {
         ))}
       </div>
 
-      {/* Tasks grouped by job */}
+      {loading&&<div style={{fontSize:11,color:T_I.muted}}>Loading tasks…</div>}
+      {!loading&&loadErr&&<div style={{fontSize:11,color:SH.red}}>{loadErr} <button onClick={load} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>}
+      {!loading&&!loadErr&&data.byJob.length===0&&<div style={{background:T_I.card,border:`1px solid ${T_I.bord}`,borderRadius:14,padding:24,textAlign:"center",fontSize:11,color:T_I.muted}}>No interconnection tasks yet.</div>}
+
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        {Object.values(byJob).map(job=>(
-          <Card T={T_I} key={job.job_id}
-            title={<span>{job.homeowner_name} <span style={{color:T_I.muted,fontWeight:400}}>· {job.utility_name}</span></span>}>
-            {job.tasks.map(task=>{
-              const isDone = done[task.id] || task.status === "completed";
-              const color  = isDone ? SH.green : STATUS_COLOR[task.status] || SH.gold;
+        {data.byJob.map(group=>(
+          <Card T={T_I} key={group.jobId||"general"}
+            title={<span>{group.jobTitle} <span style={{color:T_I.muted,fontWeight:400}}>· {group.utility}</span></span>}>
+            {group.tasks.map(task=>{
+              const st=(task.status||"").toLowerCase();
+              const isDone=st==="completed";
+              const color=STATUS_COLOR[st]||SH.gold;
+              const overdue=!isDone&&task.dueDate&&new Date(task.dueDate)<new Date();
               return(
                 <div key={task.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:`1px solid ${T_I.bord}22`}}>
-                  <button onClick={()=>!isDone&&setDone(p=>({...p,[task.id]:true}))}
+                  <button disabled={isDone||busyId===task.id} onClick={()=>complete(task)} aria-label="Mark complete"
                     style={{width:28,height:28,borderRadius:"50%",border:`2px solid ${color}`,
                       background:isDone?`${color}20`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:isDone?"default":"pointer",flexShrink:0}}>
                     {isDone&&<Ic n="check" s={12} c={color}/>}
                   </button>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:12,fontWeight:500,color:isDone?T_I.dim:T_I.text,textDecoration:isDone?"line-through":"none"}}>{task.task_name}</div>
-                    <div style={{fontSize:10,color:T_I.dim,marginTop:2}}>
-                      Due {task.due_date}
-                      {task.completed_at&&<span style={{color:SH.green}}> · Completed {task.completed_at}</span>}
+                    <div style={{fontSize:12,fontWeight:500,color:isDone?T_I.dim:T_I.text,textDecoration:isDone?"line-through":"none"}}>{task.taskName}</div>
+                    <div style={{fontSize:10,color:overdue?SH.red:T_I.dim,marginTop:2}}>
+                      {task.dueDate?`Due ${new Date(task.dueDate).toLocaleDateString()}`:"No due date"}{overdue?" · overdue":""}
+                      {task.completedAt&&<span style={{color:SH.green}}> · Completed {new Date(task.completedAt).toLocaleDateString()}</span>}
                     </div>
                   </div>
-                  <Badge color={color}>{isDone?"completed":task.status}</Badge>
+                  <Badge color={color}>{st.replace(/_/g," ")}</Badge>
                 </div>
               );
             })}
@@ -14988,69 +15048,119 @@ function iOk(status){
 
 function InstProfile(){
   const {isMobile,isTablet}=useBP();
+  const {installer,loading,error,reload}=useInstallerProfile();
+  const [form,setForm]=useState({companyName:"",licenseNumber:"",nabcepCertified:false,specialties:""});
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState({type:"",text:""});
+  useEffect(()=>{
+    if(!installer) return;
+    setForm({companyName:installer.companyName||"",licenseNumber:installer.licenseNumber||"",nabcepCertified:!!installer.nabcepCertified,specialties:(installer.specialties||[]).join(", ")});
+  },[installer]);
+  const save=async()=>{
+    if(!form.companyName.trim()){setMsg({type:"error",text:"Company name is required."});return;}
+    setSaving(true);setMsg({type:"",text:""});
+    try{
+      const r=await fetch("/api/installers/profile",{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({companyName:form.companyName.trim(),licenseNumber:form.licenseNumber.trim(),nabcepCertified:form.nabcepCertified,specialties:form.specialties.split(",").map(x=>x.trim()).filter(Boolean)})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Could not save profile");
+      setMsg({type:"ok",text:"Profile saved."});reload();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setSaving(false);
+  };
+  const VSTATUS={VERIFIED:{l:"Verified",c:SH.green},PENDING:{l:"Pending verification",c:SH.orange},REJECTED:{l:"Rejected",c:SH.red},SUSPENDED:{l:"Suspended",c:SH.red}};
+  const vs=VSTATUS[installer?.verificationStatus]||VSTATUS.PENDING;
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
         <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Company Profile</h1>
-        <Btn T={T_I}><Ic n="check" s={13} c="#0A0F1E"/>Save Changes</Btn>
+        <Btn T={T_I} disabled={saving||loading||!installer} onClick={save}><Ic n="check" s={13} c="#0A0F1E"/>{saving?"Saving…":"Save Changes"}</Btn>
       </div>
+      {loading&&<div style={{fontSize:11,color:T_I.muted,marginBottom:12}}>Loading profile…</div>}
+      {error&&<div style={{fontSize:11,color:SH.red,marginBottom:12}}>{error} <button onClick={reload} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>}
+      {msg.text&&<div style={{fontSize:11,marginBottom:12,color:msg.type==="ok"?SH.green:SH.red}}>{msg.text}</div>}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:14}}>
         <Card T={T_I} title="Business Details">
-          <Inp label="Company Name" value={IDATA.profile.company_name||""} onChange={()=>{}} T={T_I}/>
-          <Inp label="License Number" value={IDATA.profile.license||""} onChange={()=>{}} T={T_I}/>
-          <Inp label="Business Email" type="email" value={IDATA.profile.email||""} onChange={()=>{}} T={T_I}/>
-          <Inp label="Phone" value={IDATA.profile.phone||""} onChange={()=>{}} T={T_I}/>
-          <div style={{marginBottom:14}}>
-            <label style={{display:"block",marginBottom:5,fontSize:10,color:T_I.muted,fontWeight:500}}>Company Description</label>
-            <textarea rows={3} defaultValue={IDATA.profile.description||""}
-              style={{width:"100%",background:T_I.surf,border:`1px solid ${T_I.bord}`,borderRadius:8,padding:"9px 12px",color:T_I.text,fontSize:12,resize:"vertical",lineHeight:1.6}}/>
-          </div>
+          <Inp label="Company Name" value={form.companyName} onChange={v=>setForm(f=>({...f,companyName:v}))} T={T_I}/>
+          <Inp label="License Number" value={form.licenseNumber} onChange={v=>setForm(f=>({...f,licenseNumber:v}))} T={T_I}/>
+          <Inp label="Specialties (comma-separated)" value={form.specialties} onChange={v=>setForm(f=>({...f,specialties:v}))} T={T_I}/>
+          <Tog on={form.nabcepCertified} onChange={v=>setForm(f=>({...f,nabcepCertified:v}))} label="NABCEP certified" sub="GridGuide verifies certification before showing it to homeowners" T={T_I}/>
+          <Inp label="Account Email" type="email" value={installer?.user?.email||""} disabled T={T_I} note="Change your sign-in email from account settings."/>
+          <Inp label="Phone" value={installer?.user?.phone||""} disabled T={T_I}/>
         </Card>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <Card T={T_I} title="Certifications">
-            <Badge color={SH.teal} style={{marginBottom:12}}>GridGuide Elite</Badge>
-            {[{l:"NABCEP Certified",ok:true},{l:"Licensed in TX",ok:true},{l:"Liability Insured",ok:true},{l:"Workers Comp",ok:true},{l:"Background Check",ok:true}].map(v=>(
+          <Card T={T_I} title="Verification">
+            <Badge color={vs.c} style={{marginBottom:12}}>{vs.l}</Badge>
+            {[{l:"License on file",ok:!!installer?.licenseNumber},{l:"Insurance verified",ok:!!installer?.insuranceVerified},{l:"Background check",ok:!!installer?.backgroundChecked},{l:"NABCEP (self-reported)",ok:!!installer?.nabcepCertified}].map(v=>(
               <div key={v.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T_I.bord}22`}}>
                 <span style={{fontSize:11,color:T_I.muted}}>{v.l}</span>
-                <Ic n={v.ok?"check":"x"} s={13} c={v.ok?SH.green:SH.red}/>
+                <Ic n={v.ok?"check":"x"} s={13} c={v.ok?SH.green:T_I.dim}/>
               </div>
             ))}
+            <div style={{fontSize:10,color:T_I.dim,marginTop:10,lineHeight:1.6}}>Insurance and background checks are completed by the GridGuide team. Contact support to submit documents.</div>
           </Card>
-          <Card T={T_I} title="Documents">
-            <Alert type="info" T={T_I}>Upload license and insurance to maintain Elite status.</Alert>
-            {[{n:"Business License",s:"verified"},{n:"General Liability",s:"verified"},{n:"W-9 Tax Form",s:"pending"}].map(d=>(
-              <div key={d.n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T_I.bord}22`}}>
-                <span style={{fontSize:11,color:T_I.muted}}>{d.n}</span>
-                <Badge color={d.s==="verified"?SH.green:SH.orange}>{d.s}</Badge>
-              </div>
-            ))}
-            <Btn T={T_I} sz="sm" v="ghost" style={{marginTop:9}}><Ic n="upload" s={12} c={SH.teal}/>Upload Doc</Btn>
-          </Card>
+          {installer?.certifications?.length>0&&(
+            <Card T={T_I} title="Certifications">
+              {installer.certifications.map(c=>(
+                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
+                  <span style={{color:T_I.muted}}>{c.name}{c.issuer?` · ${c.issuer}`:""}</span>
+                  <Badge color={c.status==="verified"?SH.green:c.status==="expired"?SH.red:SH.orange}>{c.status}</Badge>
+                </div>
+              ))}
+            </Card>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
+// Shared loader for the installer's own profile (GET /api/installers/profile).
+function useInstallerProfile(){
+  const [state,setState]=useState({installer:null,loading:true,error:""});
+  const load=useCallback(()=>{
+    setState(p=>({...p,loading:true,error:""}));
+    fetch("/api/installers/profile",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>setState({installer:d.installer||null,loading:false,error:""}))
+      .catch(e=>setState({installer:null,loading:false,error:e.message||"Could not load profile"}));
+  },[]);
+  useEffect(()=>{load();},[load]);
+  return {...state,reload:load};
+}
+
 function InstReviews(){
   const {isMobile,isTablet}=useBP();
+  const {installer,loading:profLoading,error:profErr}=useInstallerProfile();
+  const [rev,setRev]=useState({reviews:[],average:0,total:0,loading:true,error:""});
+  useEffect(()=>{
+    if(!installer?.id){ if(!profLoading) setRev(r=>({...r,loading:false})); return; }
+    fetch(`/api/installers/reviews?installerId=${encodeURIComponent(installer.id)}`,{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not load reviews");return d;})
+      .then(d=>setRev({reviews:d.reviews||[],average:d.average||0,total:d.total||0,loading:false,error:""}))
+      .catch(e=>setRev({reviews:[],average:0,total:0,loading:false,error:e.message}));
+  },[installer?.id,profLoading]);
+  const err=profErr||rev.error;
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
         <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Reviews</h1>
         <div style={{display:"flex",gap:7,alignItems:"center"}}>
-          <span style={{fontFamily:"'Space Grotesk'",fontSize:25,fontWeight:700,color:SH.gold}}>4.9</span>
-          <div><div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(i=><Ic key={i} n="star" s={12} c={SH.gold}/>)}</div><div style={{fontSize:10,color:T_I.muted,marginTop:2}}>847 reviews</div></div>
+          <span style={{fontFamily:"'Space Grotesk'",fontSize:25,fontWeight:700,color:SH.gold}}>{rev.total?rev.average.toFixed(1):"—"}</span>
+          <div><div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(i=><Ic key={i} n="star" s={12} c={i<=Math.round(rev.average)?SH.gold:T_I.bord}/>)}</div><div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{rev.total} verified review{rev.total===1?"":"s"}</div></div>
         </div>
       </div>
+      {(profLoading||rev.loading)&&<div style={{fontSize:11,color:T_I.muted}}>Loading reviews…</div>}
+      {err&&<div style={{fontSize:11,color:SH.red}}>{err}</div>}
+      {!profLoading&&!rev.loading&&!err&&rev.reviews.length===0&&<div style={{background:T_I.card,border:`1px solid ${T_I.bord}`,borderRadius:14,padding:24,textAlign:"center",fontSize:11,color:T_I.muted}}>No verified reviews yet. Reviews from homeowners appear here after verification.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {IDATA.reviews.map((r,i)=>(
-          <Card key={i} T={T_I}>
+        {rev.reviews.map(r=>(
+          <Card key={r.id} T={T_I}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:9,flexWrap:"wrap",gap:7}}>
-              <div><div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:T_I.text}}>{r.customer}</div><div style={{fontSize:10,color:T_I.muted,marginTop:1}}>{r.date}</div></div>
+              <div><div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:T_I.text}}>{r.jobType||"Homeowner review"}</div><div style={{fontSize:10,color:T_I.muted,marginTop:1}}>{new Date(r.createdAt).toLocaleDateString()}</div></div>
               <div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(i=><Ic key={i} n="star" s={12} c={i<=r.rating?SH.gold:T_I.bord}/>)}</div>
             </div>
-            <p style={{fontSize:12,color:T_I.muted,lineHeight:1.75,fontStyle:"italic"}}>"{r.text}"</p>
+            {(r.comment||r.text)&&<p style={{fontSize:12,color:T_I.muted,lineHeight:1.75,fontStyle:"italic"}}>"{r.comment||r.text}"</p>}
           </Card>
         ))}
       </div>
@@ -15213,6 +15323,7 @@ const InstDash=({setTab,user,currentPlan="FREE"})=>{
   const {isMobile}=useBP();
   const {jobs:dashJobs,loading:dashJobsLoading}=useInstallerJobs();
   const activeJobCount=dashJobs.filter(j=>["scheduled","in_progress"].includes(jobStatusKey(j.status))).length;
+  const {installer:dashProfile}=useInstallerProfile();
   const plan = INST_PLANS[currentPlan]||INST_PLANS.FREE;
   return(
     <div>
@@ -15251,10 +15362,10 @@ const InstDash=({setTab,user,currentPlan="FREE"})=>{
       {/* KPI row */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:18}}>
         {[
-          {icon:"users",  label:"Active Leads",      value:IDATA.leads.length||0,       color:SH.teal,  tab:"leads"},
+          {icon:"users",  label:"Leads",             value:dashProfile?(dashProfile.stats?.totalLeads??0):"…", color:SH.teal,  tab:"leads"},
           {icon:"tool",   label:"Active Jobs",        value:dashJobsLoading?"…":activeJobCount,        color:SH.gold,  tab:"jobs"},
-          {icon:"dollar", label:"Monthly Commission", value:"$0",                        color:SH.green, tab:"earnings"},
-          {icon:"star",   label:"Avg Rating",         value:IDATA.profile.rating||"—",   color:SH.purple,tab:"reviews"},
+          {icon:"dollar", label:"Monthly Commission", value:dashProfile?`$${(dashProfile.stats?.monthlyRevenueShare||0).toLocaleString()}`:"…", color:SH.green, tab:"earnings"},
+          {icon:"star",   label:"Avg Rating",         value:dashProfile?.reviewCount?Number(dashProfile.rating||0).toFixed(1):"—", color:SH.purple,tab:"reviews"},
         ].map(s=>(
           <div key={s.label} onClick={()=>setTab&&setTab(s.tab)}
             style={{background:T_I.card,border:`1px solid ${T_I.bord}`,borderRadius:12,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
@@ -15294,14 +15405,9 @@ const InstDash=({setTab,user,currentPlan="FREE"})=>{
         <Card T={T_I} title="Your Plan">
           <div style={{textAlign:"center",padding:"8px 0 16px"}}>
             <div style={{fontSize:11,color:T_I.muted,marginBottom:4}}>Current Plan</div>
-            <div style={{fontFamily:"'Space Grotesk'",fontSize:22,fontWeight:800,color:SH.gold,marginBottom:2}}>Pro</div>
-            <div style={{fontSize:11,color:T_I.muted,marginBottom:14}}>$99/mo · 25% recurring commission</div>
-            {[
-              "Priority directory placement",
-              "Lead tracking dashboard",
-              "Proposal tools",
-              "25% recurring referral revenue",
-            ].map(f=>(
+            <div style={{fontFamily:"'Space Grotesk'",fontSize:22,fontWeight:800,color:plan.color||SH.gold,marginBottom:2}}>{plan.label}</div>
+            <div style={{fontSize:11,color:T_I.muted,marginBottom:14}}>{plan.price>0?`$${plan.price}/mo`:"Free"} · {plan.shareRate}% recurring commission</div>
+            {(plan.features||[]).slice(0,4).map(f=>(
               <div key={f} style={{display:"flex",gap:8,fontSize:11,color:T_I.muted,padding:"4px 0",textAlign:"left"}}>
                 <Icon name="check" size={11} color={SH.teal} style={{flexShrink:0,marginTop:1}}/>{f}
               </div>
@@ -15704,21 +15810,46 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
 
 const InstEarnings=()=>{
   const {isMobile,isTablet}=useBP();
+  const [period,setPeriod]=useState("year");
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  useEffect(()=>{
+    setLoading(true);setLoadErr("");
+    fetch(`/api/installers/earnings?period=${period}`,{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(setData)
+      .catch(e=>{setData(null);setLoadErr(e.message);})
+      .finally(()=>setLoading(false));
+  },[period]);
+  const sm=data?.summary;
+  const money=v=>`$${(v||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   return(
     <div>
-      <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text,marginBottom:18}}>Earnings</h1>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:12,marginBottom:18}}>
-        <StatCard icon="dollar" label="Total Revenue" value="$142,000" delta={22} color={SH.teal} T={T_I}/>
-        <StatCard icon="trending" label="Commission (10%)" value="$14,200" color={SH.gold} T={T_I}/>
-        <StatCard icon="credit" label="Your Net" value="$127,800" color={SH.green} T={T_I}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+        <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Earnings</h1>
+        <div style={{display:"flex",gap:6}}>
+          {[["month","30 days"],["quarter","90 days"],["year","12 months"],["all","All time"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setPeriod(k)} style={{padding:"5px 10px",borderRadius:7,fontSize:10,fontWeight:600,cursor:"pointer",background:period===k?SH.teal:"transparent",color:period===k?"#0A0F1E":T_I.muted,border:`1px solid ${period===k?SH.teal:T_I.bord}`}}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {loading&&<div style={{fontSize:11,color:T_I.muted,marginBottom:14}}>Loading earnings…</div>}
+      {!loading&&loadErr&&<div style={{fontSize:11,color:SH.red,marginBottom:14}}>{loadErr}</div>}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:18}}>
+        <StatCard icon="dollar" label="Completed project revenue" value={sm?money(sm.totalRevenue):"—"} color={SH.teal} T={T_I}/>
+        <StatCard icon="trending" label="GridGuide success fees" value={sm?money(sm.totalFees):"—"} color={SH.gold} T={T_I}/>
+        <StatCard icon="credit" label="Paid out to you" value={sm?money(sm.totalEarned):"—"} color={SH.green} T={T_I}/>
+        <StatCard icon="calendar" label="Pending payout" value={sm?money(sm.pendingPayout):"—"} color={SH.purple} T={T_I}/>
       </div>
       <Card T={T_I} title="Payout History">
-        {IDATA.earnings.map((e,i)=>(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${T_I.bord}22`,flexWrap:"wrap",gap:9}}>
-            <div><div style={{fontSize:12,fontWeight:500,color:T_I.text}}>{e.period}</div><div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{e.jobs} jobs · ${e.revenue.toLocaleString()} · ${e.commission.toLocaleString()} commission</div></div>
+        {data&&(data.payouts||[]).length===0&&<div style={{fontSize:11,color:T_I.muted,padding:"10px 0"}}>No payouts in this period.</div>}
+        {(data?.payouts||[]).map(p=>(
+          <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${T_I.bord}22`,flexWrap:"wrap",gap:9}}>
+            <div><div style={{fontSize:12,fontWeight:500,color:T_I.text}}>{p.job?.title||"Payout"}</div><div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{p.settledAt?new Date(p.settledAt).toLocaleDateString():"—"}{p.job?.address?` · ${p.job.address}`:""}</div></div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <span style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:SH.teal}}>${(e.revenue-e.commission).toLocaleString()}</span>
-              <Badge color={e.status==="paid"?SH.green:SH.orange}>{e.status}</Badge>
+              <span style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:SH.teal}}>{money(p.netAmount)}</span>
+              <Badge color={SH.green}>paid</Badge>
             </div>
           </div>
         ))}
@@ -16329,28 +16460,7 @@ const ADMIN_NAV=[
   {id:"invitations",icon:"mail",label:"Invitations",group:"System"},
   {id:"settings",icon:"settings",label:"Settings",group:"System"},
 ];
-const ADATA={
-  users:[
-  ],
-  integrations:[
-    {id:"utilityapi",name:"UtilityAPI",sub:"Utility bill & meter data · Green Button",cat:"Utility Data",color:SH.teal,icon:"activity",docs:"https://utilityapi.com/docs",env:"UTILITYAPI_KEY",on:true,warning:false},
-    {id:"derapi",name:"Derapi",sub:"Normalized DER layer · All home energy devices",cat:"Devices",color:SH.purple,icon:"plug",docs:"https://derapi.com/docs",env:"DERAPI_KEY",on:true,warning:false},
-    {id:"stripe",name:"Stripe",sub:"Payments · Subscriptions · Payouts",cat:"Payments",color:SH.purple,icon:"credit",docs:"https://stripe.com/docs",env:"STRIPE_SECRET_KEY",on:true,warning:true},
-    {id:"energyhub",name:"EnergyHub",sub:"VPP dispatch · Demand response",cat:"VPP",color:SH.green,icon:"zap",docs:"https://energyhub.com/developers",env:"ENERGYHUB_API_KEY",on:true,warning:false},
-    {id:"leap",name:"Leap",sub:"Demand response marketplace",cat:"VPP",color:SH.green,icon:"trending",docs:"https://leap.ac/docs",env:"LEAP_API_KEY",on:false,warning:false},
-    {id:"mapbox",name:"Mapbox",sub:"Maps · Installer coverage · Territories",cat:"Maps",color:SH.blue,icon:"map",docs:"https://docs.mapbox.com",env:"NEXT_PUBLIC_MAPBOX_TOKEN",on:true,warning:false},
-    {id:"anthropic",name:"Anthropic (Claude)",sub:"AI Energy Assistant",cat:"AI",color:SH.orange,icon:"cpu",docs:"https://docs.anthropic.com",env:"ANTHROPIC_API_KEY",on:true,warning:true},
-    {id:"sendgrid",name:"SendGrid",sub:"Transactional email",cat:"Communication",color:SH.blue,icon:"mail",docs:"https://docs.sendgrid.com",env:"SENDGRID_API_KEY",on:true,warning:false},
-    {id:"twilio",name:"Twilio",sub:"SMS alerts · 2FA codes",cat:"Communication",color:SH.red,icon:"bell",docs:"https://twilio.com/docs",env:"TWILIO_ACCOUNT_SID",on:false,warning:false},
-  ],
-  apiHealth:[
-    {name:"Utility Connect",ep:"/api/utility",ms:142,up:"99.9%",ok:true},
-    {name:"AI Chat",ep:"/api/ai/chat",ms:2840,up:"98.2%",ok:false},
-    {name:"Device Sync",ep:"/api/devices",ms:89,up:"99.7%",ok:true},
-    {name:"VPP Dispatch",ep:"/api/vpp",ms:204,up:"99.8%",ok:true},
-    {name:"Payments",ep:"/api/payments",ms:310,up:"100%",ok:true},
-  ],
-};
+// (ADATA demo constants removed — admin screens load real data from /api/admin/*.)
 
 
 const ADMIN_PLAN_CONFIG={
@@ -16596,60 +16706,90 @@ function AdminDash({setTab}) {
 
 function AdminUsers(){
   const {isMobile}=useBP();
-  const [selected,setSelected]=useState(null);
-  const [users,setUsers]=useState(ADATA.users);
-  const [filter,setFilter]=useState("all");
-  const pColor={Pro:SH.teal,Free:T_A.muted,Enterprise:SH.gold};
-  const sColor={active:SH.green,inactive:T_A.dim,suspended:SH.red};
-  const filtered=users.filter(u=>filter==="all"||u.plan===filter);
-  const updatePlan=(id,plan)=>{
-    setUsers(prev=>prev.map(u=>u.id===id?{...u,plan,vpp:plan!=="Free"?u.vpp:false,devices:plan==="Free"?Math.min(u.devices,2):u.devices}:u));
-    setSelected(prev=>prev&&prev.id===id?{...prev,plan,vpp:plan!=="Free"?prev.vpp:false,devices:plan==="Free"?Math.min(prev.devices,2):prev.devices}:prev);
+  const PLANS=[["HOMEOWNER_FREE","Free"],["HOMEOWNER_PLUS","Plus"],["HOMEOWNER_PREMIUM","Pro"]];
+  const planLabel=p=>(PLANS.find(x=>x[0]===p)||[p,p||"—"])[1];
+  const pColor={HOMEOWNER_PLUS:SH.teal,HOMEOWNER_FREE:T_A.muted,HOMEOWNER_PREMIUM:SH.gold};
+  const [users,setUsers]=useState([]);
+  const [total,setTotal]=useState(0);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [planFilter,setPlanFilter]=useState("");
+  const [roleFilter,setRoleFilter]=useState("");
+  const [q,setQ]=useState("");
+  const [query,setQuery]=useState("");
+  const [selectedId,setSelectedId]=useState(null);
+  const [saving,setSaving]=useState("");
+  const [msg,setMsg]=useState({type:"",text:""});
+  const load=useCallback(()=>{
+    setLoading(true);setLoadErr("");
+    const qs=new URLSearchParams({limit:"100",...(planFilter?{plan:planFilter}:{}),...(roleFilter?{role:roleFilter}:{}),...(query?{q:query}:{})});
+    fetch(`/api/admin/users?${qs}`,{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>{setUsers(d.users||[]);setTotal(d.total||0);})
+      .catch(e=>{setUsers([]);setTotal(0);setLoadErr(e.message);})
+      .finally(()=>setLoading(false));
+  },[planFilter,roleFilter,query]);
+  useEffect(()=>{load();},[load]);
+  const selected=users.find(u=>u.id===selectedId)||null;
+  const patch=async(u,data,label)=>{
+    setSaving(label);setMsg({type:"",text:""});
+    try{
+      const r=await fetch(`/api/admin/users?id=${encodeURIComponent(u.id)}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Update failed");
+      setMsg({type:"ok",text:"User updated."});load();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setSaving("");
   };
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-        <div><h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_A.text}}>Users</h1><p style={{color:T_A.muted,fontSize:11,marginTop:2}}>Assign Free, Pro, or Enterprise access from the admin portal.</p></div>
-        <div style={{display:"flex",gap:8}}><Btn v="outline" sz="sm" T={T_A}><Ic n="download" s={13} c={T_A.muted}/>Export</Btn><Btn sz="sm" T={T_A}><Ic n="plus" s={13} c="#0A0F1E"/>Invite</Btn></div>
+        <div><h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_A.text}}>Users</h1><p style={{color:T_A.muted,fontSize:11,marginTop:2}}>{loading?"Loading…":`${total.toLocaleString()} user${total===1?"":"s"}`} · Plan changes here are admin overrides and don't touch Stripe billing.</p></div>
       </div>
-      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {["all","Free","Plus","Pro"].map(f=><button key={f} onClick={()=>setFilter(f)} style={{padding:"6px 12px",borderRadius:7,fontSize:10,fontWeight:600,background:filter===f?T_A.accent:T_A.card,color:filter===f?"#0A0F1E":T_A.muted,border:`1px solid ${filter===f?T_A.accent:T_A.bord}`,textTransform:"capitalize"}}>{f}</button>)}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")setQuery(q.trim());}} placeholder="Search name or email" style={{background:T_A.surf,border:`1px solid ${T_A.bord}`,borderRadius:8,padding:"6px 10px",fontSize:11,color:T_A.text,minWidth:180}}/>
+        <Btn sz="sm" v="outline" T={T_A} onClick={()=>setQuery(q.trim())}>Search</Btn>
+        {[["","All plans"],...PLANS].map(([k,l])=><button key={l} onClick={()=>setPlanFilter(k)} style={{padding:"6px 12px",borderRadius:7,fontSize:10,fontWeight:600,background:planFilter===k?T_A.accent:T_A.card,color:planFilter===k?"#0A0F1E":T_A.muted,border:`1px solid ${planFilter===k?T_A.accent:T_A.bord}`}}>{l}</button>)}
+        <select value={roleFilter} onChange={e=>setRoleFilter(e.target.value)} style={{background:T_A.surf,border:`1px solid ${T_A.bord}`,borderRadius:8,padding:"6px 8px",fontSize:10,color:T_A.text}}>
+          {[["","All roles"],["CONSUMER","Homeowners"],["INSTALLER","Installers"],["SELLER","Sellers"],["ADMIN","Admins"]].map(([k,l])=><option key={l} value={k}>{l}</option>)}
+        </select>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:selected&&!isMobile?"1fr 360px":"1fr",gap:14}}>
+      {loadErr&&<div style={{fontSize:11,color:SH.red,marginBottom:10}}>{loadErr}</div>}
+      {msg.text&&<div style={{fontSize:11,marginBottom:10,color:msg.type==="ok"?SH.green:SH.red}}>{msg.text}</div>}
+      <div style={{display:"grid",gridTemplateColumns:selected&&!isMobile?"1fr 340px":"1fr",gap:14}}>
         <Card T={T_A}>
-          <Tbl T={T_A} cols={[
+          <Tbl T={T_A} empty={loading?"Loading users…":"No users match."} cols={[
             {key:"name",label:"User",render:(v,row)=>(
               <div style={{display:"flex",gap:9,alignItems:"center"}}>
-                <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${SH.teal},${SH.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#0A0F1E",fontFamily:"'Space Grotesk'",flexShrink:0}}>{v.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-                <div><div style={{fontSize:11,fontWeight:500,color:T_A.text}}>{v}</div><div style={{fontSize:10,color:T_A.muted}}>{row.email}</div></div>
+                <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${SH.teal},${SH.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#0A0F1E",fontFamily:"'Space Grotesk'",flexShrink:0}}>{(v||row.email||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
+                <div><div style={{fontSize:11,fontWeight:500,color:T_A.text}}>{v||"—"}</div><div style={{fontSize:10,color:T_A.muted}}>{row.email}</div></div>
               </div>
             )},
-            {key:"plan",label:"Plan",render:(v,row)=><select value={v} onChange={e=>updatePlan(row.id,e.target.value)} onClick={e=>e.stopPropagation()} style={{background:T_A.surf,border:`1px solid ${pColor[v]||T_A.bord}`,borderRadius:8,padding:"5px 8px",fontSize:10,color:pColor[v]||T_A.text}}>{["Free","Plus","Pro"].map(p=><option key={p} value={p}>{p}</option>)}</select>},
-            {key:"status",label:"Status",render:v=><Badge color={sColor[v]||T_A.dim} dot>{v}</Badge>},
-            {key:"devices",label:"Devices",accent:true},
-            {key:"vpp",label:"VPP",render:v=><Ic n={v?"check":"x"} s={13} c={v?SH.green:T_A.bord}/>},
-          ]} rows={filtered} onRowClick={setSelected}/>
+            {key:"role",label:"Role",render:v=><span style={{fontSize:10,color:T_A.muted,textTransform:"capitalize"}}>{(v||"").toLowerCase()}</span>},
+            {key:"plan",label:"Plan",render:v=><Badge color={pColor[v]||T_A.dim}>{planLabel(v)}</Badge>},
+            {key:"subscriptionStatus",label:"Billing",render:v=><span style={{fontSize:10,color:T_A.muted}}>{v||"—"}</span>},
+            {key:"_count",label:"Devices",render:v=><span>{v?.devices??0}</span>},
+            {key:"createdAt",label:"Joined",render:v=><span style={{fontSize:10,color:T_A.muted}}>{new Date(v).toLocaleDateString()}</span>},
+          ]} rows={users} onRowClick={u=>setSelectedId(u.id)}/>
         </Card>
         {selected&&(
           <Card T={T_A} title="Account Controls">
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
-              <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                <div style={{width:36,height:36,borderRadius:"50%",background:`linear-gradient(135deg,${SH.teal},${SH.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0A0F1E",fontFamily:"'Space Grotesk'"}}>{selected.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-                <div><div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:T_A.text}}>{selected.name}</div><div style={{fontSize:10,color:T_A.muted}}>{selected.email}</div></div>
+              <div><div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:T_A.text}}>{selected.name||"—"}</div><div style={{fontSize:10,color:T_A.muted}}>{selected.email}</div></div>
+              <button onClick={()=>setSelectedId(null)} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={15} c={T_A.dim}/></button>
+            </div>
+            {[["Role",(selected.role||"").toLowerCase()],["Plan",planLabel(selected.plan)],["Billing status",selected.subscriptionStatus||"—"],["Email verified",selected.emailVerified?"Yes":"No"],["Orders",selected._count?.orders??0],["Devices",selected._count?.devices??0]].map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T_A.bord}22`,fontSize:11}}><span style={{color:T_A.muted}}>{k}</span><span style={{color:T_A.text,textTransform:"capitalize"}}>{v}</span></div>
+            ))}
+            {selected.role==="CONSUMER"&&(
+              <div style={{marginTop:14}}>
+                <div style={{fontSize:10,color:T_A.muted,marginBottom:6}}>Override homeowner plan</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {PLANS.map(([k,l])=><Btn key={k} sz="sm" v={selected.plan===k?"primary":"outline"} T={T_A} disabled={!!saving||selected.plan===k} onClick={()=>{if(window.confirm(`Set ${selected.email} to ${l}? This doesn't change their Stripe billing.`))patch(selected,{plan:k},"plan");}}>{l}</Btn>)}
+                </div>
               </div>
-              <button onClick={()=>setSelected(null)}><Ic n="x" s={15} c={T_A.dim}/></button>
-            </div>
-            <Sel label="Membership Plan" value={selected.plan} onChange={v=>updatePlan(selected.id,v)} options={["Free","Plus","Pro"]} T={T_A}/>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:14}}>
-              {[{l:"API route",v:ADMIN_PLAN_CONFIG[selected.plan]?.api},{l:"Signup link",v:ADMIN_PLAN_CONFIG[selected.plan]?.checkout},{l:"AI limit",v:ADMIN_PLAN_CONFIG[selected.plan]?.limits.ai},{l:"VPP",v:ADMIN_PLAN_CONFIG[selected.plan]?.limits.vpp},{l:"Devices",v:ADMIN_PLAN_CONFIG[selected.plan]?.limits.devices},{l:"Rewards",v:`${selected.rewards.toLocaleString()} pts`}].map(r=>(
-                <div key={r.l} style={{padding:"9px 11px",background:T_A.hi,borderRadius:7}}><div style={{fontSize:9,color:T_A.dim,marginBottom:3}}>{r.l}</div><div style={{fontSize:10,fontWeight:500,color:T_A.text,wordBreak:"break-word"}}>{r.v}</div></div>
-              ))}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:7}}>
-              <Btn T={T_A} full><Ic n="mail" s={13} c="#0A0F1E"/>Send Upgrade Email</Btn>
-              <Btn T={T_A} v="dark" full><Ic n="refresh" s={13} c={T_A.muted}/>Sync Billing Status</Btn>
-              <Btn T={T_A} v="danger" full><Ic n="shield" s={13} c={SH.red}/>Suspend Account</Btn>
-            </div>
+            )}
+            {!selected.emailVerified&&<Btn T={T_A} v="outline" full style={{marginTop:14}} disabled={!!saving} onClick={()=>patch(selected,{emailVerified:true},"verify")}>{saving==="verify"?"Saving…":"Mark email verified"}</Btn>}
           </Card>
         )}
       </div>
@@ -16674,7 +16814,7 @@ function AdminMemberships(){
         <StatCard icon="cpu" label="Pro Members" value={ADMIN_PLAN_CONFIG.Pro.users.toLocaleString()} delta={null} color={SH.gold} T={T}/>
         <StatCard icon="dollar" label="Membership MRR" value={`$${totalMrr.toLocaleString()}`} delta={null} color={SH.green} T={T}/>
       </div>
-        <StatCard icon="trending" label="Churn Rate" value={ADATA.metrics?.churnRate||"0%"} delta={null} color={SH.orange} T={T}/>
+        <StatCard icon="trending" label="Churn Rate" value="Not tracked yet" delta={null} color={SH.orange} T={T}/>
         
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:14,marginBottom:16}}>
         {plans.map(p=>(
@@ -17037,25 +17177,34 @@ function AdminIntegrations(){
 
 function AdminAPIHealth(){
   const {isMobile,isTablet}=useBP();
+  // Real configuration status from GET /api/admin/system-status. The old
+  // screen showed hard-coded latency/uptime numbers that were never measured.
+  const [data,setData]=useState(null);
+  const [loadErr,setLoadErr]=useState("");
+  useEffect(()=>{
+    fetch("/api/admin/system-status",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(setData).catch(e=>setLoadErr(e.message));
+  },[]);
+  const list=data?.integrations||[];
+  const ready=list.filter(i=>i.configured).length;
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-        <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_A.text}}>API Health</h1>
-        <Badge color={SH.green} dot>{ADATA.apiHealth.filter(a=>a.ok).length} / {ADATA.apiHealth.length} Healthy</Badge>
+        <div><h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_A.text}}>System Status</h1><p style={{fontSize:11,color:T_A.muted,marginTop:2}}>Which services have credentials configured{data?.environment?` · ${data.environment}`:""}. This checks configuration, not live uptime.</p></div>
+        {data&&<Badge color={ready===list.length?SH.green:SH.orange} dot>{ready} / {list.length} configured</Badge>}
       </div>
+      {!data&&!loadErr&&<div style={{fontSize:11,color:T_A.muted}}>Loading…</div>}
+      {loadErr&&<div style={{fontSize:11,color:SH.red}}>{loadErr}</div>}
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {ADATA.apiHealth.map(api=>(
-          <div key={api.name} style={{background:T_A.card,border:`1px solid ${api.ok?T_A.bord:SH.orange+"44"}`,borderRadius:11,padding:"15px 18px",display:"flex",alignItems:"center",flexWrap:"wrap",gap:12}}>
-            <div style={{width:9,height:9,borderRadius:"50%",background:api.ok?SH.green:SH.orange,flexShrink:0}}/>
+        {list.map(api=>(
+          <div key={api.name} style={{background:T_A.card,border:`1px solid ${api.configured?T_A.bord:SH.orange+"44"}`,borderRadius:11,padding:"14px 18px",display:"flex",alignItems:"center",flexWrap:"wrap",gap:12}}>
+            <div style={{width:9,height:9,borderRadius:"50%",background:api.configured?SH.green:SH.orange,flexShrink:0}}/>
             <div style={{flex:1,minWidth:120}}>
               <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:T_A.text}}>{api.name}</div>
-              <div style={{fontFamily:"'JetBrains Mono'",fontSize:10,color:T_A.muted,marginTop:1}}>{api.ep}</div>
+              {api.note&&<div style={{fontSize:10,color:T_A.muted,marginTop:1}}>{api.note}</div>}
             </div>
-            <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
-              <div style={{textAlign:"center"}}><div style={{fontFamily:"'JetBrains Mono'",fontSize:11,fontWeight:600,color:api.ms>1000?SH.orange:SH.green}}>{api.ms}ms</div><div style={{fontSize:9,color:T_A.dim}}>Latency</div></div>
-              <div style={{textAlign:"center"}}><div style={{fontFamily:"'Space Grotesk'",fontSize:11,fontWeight:600,color:SH.teal}}>{api.up}</div><div style={{fontSize:9,color:T_A.dim}}>Uptime</div></div>
-              <Badge color={api.ok?SH.green:SH.orange}>{api.ok?"healthy":"degraded"}</Badge>
-            </div>
+            <Badge color={api.configured?SH.green:SH.orange}>{api.configured?"configured":"missing key"}</Badge>
           </div>
         ))}
       </div>
@@ -19970,40 +20119,57 @@ function AdminInstallers() {
 
 function AdminPayouts() {
   const T = T_A;
-  const payouts = [
-    {id:"PO-881",seller:"SolarEdge Supply Co.",period:"Jun 2026",gross:48200,fee:1446,net:46754,status:"paid",date:"Jul 1, 2026"},
-    {id:"PO-880",seller:"GreenTech Parts",period:"Jun 2026",gross:29400,fee:882,net:28518,status:"paid",date:"Jul 1, 2026"},
-    {id:"PO-882",seller:"SolarEdge Supply Co.",period:"Jul 2026",gross:21100,fee:633,net:20467,status:"pending",date:"Aug 1, 2026"},
-  ];
+  const [data,setData]=useState({payouts:[],totals:null});
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [status,setStatus]=useState("");
+  useEffect(()=>{
+    setLoading(true);setLoadErr("");
+    fetch(`/api/admin/payouts${status?`?status=${status}`:""}`,{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>setData({payouts:d.payouts||[],totals:d.totals||null}))
+      .catch(e=>{setData({payouts:[],totals:null});setLoadErr(e.message);})
+      .finally(()=>setLoading(false));
+  },[status]);
+  const money=v=>`$${(v||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const SC={PAID:"#10B981",PENDING:"#F59E0B",FAILED:"#FF4D6A",PROCESSING:"#06B6D4"};
   return (
     <div>
       <h2 style={{fontFamily:"'Space Grotesk'",fontSize:18,fontWeight:700,color:T.text,marginBottom:16}}>Payouts</h2>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
-        {[["Pending Payouts","$20,467","#F59E0B"],["Paid This Month","$75,272","#10B981"],["Platform Revenue","$2,961","#06B6D4"]].map(([k,v,color])=>(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+        {[["Pending payouts",data.totals?money(data.totals.pending):"—","#F59E0B"],["Paid this month",data.totals?money(data.totals.paidThisMonth):"—","#10B981"],["Fees on paid payouts (month)",data.totals?money(data.totals.feesThisMonth):"—","#06B6D4"]].map(([k,v,color])=>(
           <div key={k} style={{background:T.card,border:`1px solid ${T.bord}`,borderRadius:12,padding:"14px 16px"}}>
             <div style={{fontSize:10,color:T.muted,textTransform:"uppercase",marginBottom:6}}>{k}</div>
             <div style={{fontFamily:"'Space Grotesk'",fontSize:20,fontWeight:800,color}}>{v}</div>
           </div>
         ))}
       </div>
-      <div style={{background:T.card,border:`1px solid ${T.bord}`,borderRadius:14,overflow:"hidden"}}>
-        <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.bord}`,fontSize:9,color:T.muted,
-          display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr 1fr",textTransform:"uppercase",letterSpacing:"0.08em"}}>
-          {["ID","Seller","Period","Gross","Net","Status"].map(h=><div key={h}>{h}</div>)}
-        </div>
-        {payouts.map(p=>(
-          <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr 1fr",
-            padding:"12px 18px",borderBottom:`1px solid ${T.bord}18`,fontSize:11,alignItems:"center"}}>
-            <div style={{color:"#F59E0B",fontWeight:600,fontSize:10}}>{p.id}</div>
-            <div style={{color:T.text,fontWeight:500}}>{p.seller}</div>
-            <div style={{color:T.muted}}>{p.period}</div>
-            <div style={{color:T.text}}>${p.gross.toLocaleString()}</div>
-            <div style={{color:"#10B981",fontWeight:700}}>${p.net.toLocaleString()}</div>
-            <div><span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:8,
-              background:p.status==="paid"?"#10B98118":"#F59E0B18",
-              color:p.status==="paid"?"#10B981":"#F59E0B",textTransform:"uppercase"}}>{p.status}</span></div>
-          </div>
+      <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+        {[["","All"],["PENDING","Pending"],["PAID","Paid"],["FAILED","Failed"]].map(([k,l])=>(
+          <button key={l} onClick={()=>setStatus(k)} style={{padding:"5px 12px",borderRadius:7,fontSize:10,fontWeight:600,cursor:"pointer",background:status===k?T.accent:"transparent",color:status===k?"#0A0F1E":T.muted,border:`1px solid ${status===k?T.accent:T.bord}`}}>{l}</button>
         ))}
+      </div>
+      <div style={{background:T.card,border:`1px solid ${T.bord}`,borderRadius:14,overflow:"hidden",overflowX:"auto"}}>
+        <div style={{minWidth:640}}>
+          <div style={{padding:"10px 18px",borderBottom:`1px solid ${T.bord}`,fontSize:9,color:T.muted,
+            display:"grid",gridTemplateColumns:"1fr 2fr 2fr 1fr 1fr 1fr",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+            {["Type","Payee","Reference","Gross","Net","Status"].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {loading&&<div style={{padding:20,fontSize:11,color:T.muted}}>Loading payouts…</div>}
+          {!loading&&loadErr&&<div style={{padding:20,fontSize:11,color:"#FF4D6A"}}>{loadErr}</div>}
+          {!loading&&!loadErr&&data.payouts.length===0&&<div style={{padding:20,fontSize:11,color:T.muted}}>No payouts yet.</div>}
+          {data.payouts.map(p=>(
+            <div key={p.type+p.id} style={{display:"grid",gridTemplateColumns:"1fr 2fr 2fr 1fr 1fr 1fr",
+              padding:"12px 18px",borderBottom:`1px solid ${T.bord}18`,fontSize:11,alignItems:"center"}}>
+              <div style={{color:T.muted,fontSize:10}}>{p.type==="SELLER"?"Seller":"Installer"}</div>
+              <div style={{color:T.text,fontWeight:500}}>{p.payee}</div>
+              <div style={{color:T.muted}}>{p.reference}<div style={{fontSize:9}}>{p.settledAt?`Paid ${new Date(p.settledAt).toLocaleDateString()}`:p.scheduledFor?`Scheduled ${new Date(p.scheduledFor).toLocaleDateString()}`:""}</div></div>
+              <div style={{color:T.text}}>{money(p.gross)}</div>
+              <div style={{color:"#10B981",fontWeight:700}}>{money(p.net)}</div>
+              <div><span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:8,background:`${SC[p.status]||"#6A7A8A"}18`,color:SC[p.status]||"#6A7A8A",textTransform:"uppercase"}}>{p.status}</span></div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

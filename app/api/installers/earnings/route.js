@@ -44,7 +44,8 @@ export async function GET(request) {
   const totalEarned   = payouts.reduce((s, p) => s + p.netAmount, 0);
   const totalRevenue  = jobs.filter(j => j.status === "COMPLETED").reduce((s, j) => s + j.projectValue, 0);
   const totalFees     = jobs.filter(j => j.status === "COMPLETED").reduce((s, j) => s + j.successFee, 0);
-  const avgProjectVal = jobs.length ? totalRevenue / jobs.length : 0;
+  const completedCount = jobs.filter(j => j.status === "COMPLETED").length;
+  const avgProjectVal = completedCount ? totalRevenue / completedCount : 0; // revenue is completed-only, so divide by completed jobs
 
   return ok({
     period,

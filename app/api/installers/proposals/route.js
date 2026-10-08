@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import { getLeadSuccessFeeRate } from "@/lib/installer-plans.js";
 
 const createSchema = z.object({
@@ -74,7 +75,7 @@ export async function GET(request) {
       : "0",
   };
 
-  return ok({ proposals, stats });
+  return ok({ proposals: proposals.map(({ viewToken, ...p }) => p), stats });
 }
 
 export async function POST(request) {
@@ -137,17 +138,16 @@ export async function PATCH(request) {
   const updateData = { ...data };
 
   // Handle status transitions with timestamps
-  if (data.status === "SENT" && proposal.status === "DRAFT") {
-    updateData.sentAt = new Date();
-    // Notify homeowner (in production, send email)
-    await prisma.notification.create({
-      data: {
-        userId:  proposal.lead.customerEmail ? undefined : installer.userId,
-        type:    "PROPOSAL_SENT",
-        title:   "Proposal Sent",
-        message: `Proposal "${proposal.title}" for $${proposal.amount.toLocaleString()} sent to ${proposal.lead.customerName}.`,
-      },
-    }).catch(() => {});
+  if (data.status === "SENT") {
+    if (proposal.status !== "DRAFT") return err("Only draft proposals can be sent", 409);
+    if (!proposal.lead.customerEmail) return err("This lead has no customer email to send to", 400);
+    // Secure, expiring link the homeowner uses to view the proposal.
+    const expires = proposal.validUntil && proposal.validUntil > new Date()
+      ? proposal.validUntil
+      : new Date(Date.now() + 30 * 86400000);
+    updateData.sentAt             = new Date();
+    updateData.viewToken          = randomBytes(24).toString("hex");
+    updateData.viewTokenExpiresAt = expires;
   }
   if (data.status === "ACCEPTED") updateData.acceptedAt = new Date();
   if (data.status === "DECLINED") updateData.declinedAt = new Date();
@@ -186,7 +186,31 @@ export async function PATCH(request) {
     include: { lead: { select: { customerName: true } } },
   });
 
-  return ok({ proposal: updated });
+  // Actually deliver the proposal: queue it on the same delivery worker that
+  // sends invitations (retries, suppression checks). Previously "Send" only
+  // tried to create a notification with an undefined userId, which failed
+  // silently, so no homeowner ever received a proposal.
+  if (data.status === "SENT") {
+    await prisma.invitationDeliveryJob.create({
+      data: {
+        invitationType: "PROPOSAL",
+        invitationId:   proposal.id,
+        recipientEmail: proposal.lead.customerEmail,
+        status:         "PENDING",
+      },
+    });
+    await prisma.notification.create({
+      data: {
+        userId:  installer.userId,
+        type:    "PROPOSAL_SENT",
+        title:   "Proposal sent",
+        message: `"${proposal.title}" ($${proposal.amount.toLocaleString()}) is on its way to ${proposal.lead.customerName}.`,
+      },
+    }).catch(() => {});
+  }
+
+  const { viewToken, ...safe } = updated;
+  return ok({ proposal: safe });
 }
 
 export async function DELETE(request) {

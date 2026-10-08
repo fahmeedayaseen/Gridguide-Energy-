@@ -82,6 +82,23 @@ const PUBLIC_ROUTES = [
   // Utility Intelligence Module — Phase 5 AI Utility Router. Read-only lookup by
   // address/zip, same trust level as the geo endpoints above.
   { path: "/api/utilities/router", methods: ["GET"] },
+
+  // Public marketing-site stats (no user data).
+  { path: "/api/public/community-impact", methods: ["GET"] },
+
+  // Token-credentialed links opened by people who aren't signed in. Each
+  // handler validates the token itself (unknown/expired → 404/410).
+  //  - homeowner proposal view: /api/public/proposals/<token>
+  //  - partner invitation landing + accept: /api/partner-invitations/<token>[/accept]
+  // Without these entries the middleware returned 401 before the handler ran,
+  // so invitees and homeowners hit a dead page.
+  { path: "/api/public/proposals", methods: ["GET"], matchChildren: true },
+  { path: "/api/partner-invitations", methods: ["GET"], matchChildren: true },
+];
+
+// Two-segment token routes that can't use matchChildren (which allows exactly one segment).
+const PUBLIC_PATTERNS = [
+  { re: /^\/api\/partner-invitations\/[^/]+\/accept$/, methods: ["POST"] },
 ];
 
 function isPublicRoute(pathname, method) {
@@ -96,6 +113,9 @@ function isPublicRoute(pathname, method) {
       // "/api/marketplace/products/abc/reviews" or "/api/rebates/apply").
       if (/^\/[^/]+$/.test(rest)) return true;
     }
+  }
+  for (const p of PUBLIC_PATTERNS) {
+    if (p.methods.includes(method) && p.re.test(pathname)) return true;
   }
   return false;
 }
