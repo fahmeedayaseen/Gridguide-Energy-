@@ -13980,17 +13980,17 @@ const T_I = INSTALL;
 const INST_NAV=[
   {id:"dashboard",  icon:"grid",     label:"Dashboard"},
   {id:"revenue",    icon:"trending", label:"Revenue Partner",badge:"$"},
-  {id:"referrals",  icon:"users",    label:"Referral Board",  badge:"4"},
-  {id:"leads",       icon:"users",    label:"Leads",badge:"2"},
-  {id:"jobs",        icon:"tool",     label:"Jobs",badge:"3"},
-  {id:"proposals",   icon:"file",     label:"Proposals",badge:"2"},
-  {id:"interconnect",icon:"zap",      label:"Interconnection",badge:"3",group:""},
+  {id:"referrals",  icon:"users",    label:"Referral Board"},
+  {id:"leads",       icon:"users",    label:"Leads"},
+  {id:"jobs",        icon:"tool",     label:"Jobs"},
+  {id:"proposals",   icon:"file",     label:"Proposals"},
+  {id:"interconnect",icon:"zap",      label:"Interconnection",group:""},
   {id:"schedule",    icon:"calendar", label:"Schedule"},
   {id:"reviews",    icon:"star",     label:"Reviews"},
   {id:"earnings",   icon:"dollar",   label:"Earnings",group:"Finance"},
   {id:"membership", icon:"award",    label:"Membership",group:"Finance"},
   {id:"enterprise-networks", icon:"users", label:"Enterprise Networks",group:"Finance"},
-  {id:"payments",   icon:"credit",   label:"Lead Payments",group:"Finance"},
+  {id:"payments",   icon:"credit",   label:"Payments",group:"Finance"},
   {id:"profile",    icon:"user",     label:"Company Profile",group:"Account"},
   {id:"settings",   icon:"settings", label:"Settings",group:"Account"},
   {id:"view-site",    icon:"globe",   label:"View GridGuide Site", group:"Account",link:"e-home"},
@@ -14429,7 +14429,7 @@ function InstJobsDB({setTab}) {
             {actionErr&&<div style={{fontSize:11,color:SH.red,marginBottom:10}}>{actionErr}</div>}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {(st==="scheduled"||st==="in_progress")&&<Btn T={T_I} full disabled={busy} onClick={()=>markComplete(selected)}><Ic n="check" s={13} c="#0A0F1E"/>{busy?"Saving…":"Mark Job Complete"}</Btn>}
-              <Btn T={T_I} v="outline" full onClick={()=>setTab("interconnection")}><Ic n="zap" s={13} c={T_I.muted}/>View Interconnection Tasks</Btn>
+              <Btn T={T_I} v="outline" full onClick={()=>setTab("interconnect")}><Ic n="zap" s={13} c={T_I.muted}/>View Interconnection Tasks</Btn>
               <Btn T={T_I} v="outline" full onClick={()=>setTab("proposals")}><Ic n="file" s={13} c={T_I.muted}/>View Proposal</Btn>
               <button onClick={()=>setSelectedId(null)} style={{background:"none",border:"none",color:T_I.dim,fontSize:11,cursor:"pointer"}}>Close</button>
             </div>
@@ -15209,22 +15209,22 @@ function InstSettings(){
 
 
 // ── InstDash — Installer dashboard overview ──────────────────────────────────
-const InstDash=({setTab,user})=>{
+const InstDash=({setTab,user,currentPlan="FREE"})=>{
   const {isMobile}=useBP();
   const {jobs:dashJobs,loading:dashJobsLoading}=useInstallerJobs();
   const activeJobCount=dashJobs.filter(j=>["scheduled","in_progress"].includes(jobStatusKey(j.status))).length;
-  const plan = INST_PLANS["PRO"];
+  const plan = INST_PLANS[currentPlan]||INST_PLANS.FREE;
   return(
     <div>
       <div style={{marginBottom:20}}>
         <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:22,fontWeight:800,color:T_I.text}}>
           Welcome back{user?.name?", "+user.name.split(" ")[0]:""}
         </h1>
-        <p style={{fontSize:11,color:T_I.muted,marginTop:3}}>Installer Portal · Pro Plan</p>
+        <p style={{fontSize:11,color:T_I.muted,marginTop:3}}>Installer Portal · {({FREE:"Free",PRO:"Pro",ENTERPRISE:"Enterprise"})[currentPlan]||"Free"} Plan</p>
       </div>
       {/* Priority placement status */}
       {(()=>{
-        const isPro = true; // replace with currentPlan check in production
+        const isPro = currentPlan==="PRO"||currentPlan==="ENTERPRISE";
         return isPro?(
           <div style={{background:`${SH.gold}08`,border:`1px solid ${SH.gold}25`,borderRadius:12,padding:"12px 18px",marginBottom:18,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:16}}>⭐</span>
@@ -15519,15 +15519,44 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
   const [filter,setFilter]=useState("all");
   const isPro = currentPlan==="PRO"||currentPlan==="ENTERPRISE";
 
-  // Demo leads — Free only sees basic info, Pro/Enterprise see full details
-  const DEMO_LEADS=[
-    {id:"L001",customer:"Sarah M.",location:"Austin, TX",type:"Solar + Battery",budget:"$18–24k",received:"2 hrs ago",status:"new",   notes:"Wants 10kW solar + Powerwall. Has HOA. Prefers weekend survey.",phone:"(512) 555-0182",email:"sarah.m@email.com",source:"GridGuide Search"},
-    {id:"L002",customer:"James T.", location:"Round Rock, TX",type:"EV Charger",   budget:"$1–2k",  received:"Yesterday",status:"contacted",notes:"Level 2 charger for Tesla Model Y. Garage install.",phone:"(512) 555-0241",email:"james.t@email.com",source:"GridGuide Search"},
-    {id:"L003",customer:"Rivera Family",location:"Cedar Park, TX",type:"Solar Only",budget:"$12–16k",received:"2 days ago",status:"quoted",notes:"8kW system, south-facing roof. Already have battery.",phone:"(512) 555-0399",email:"rivera.family@email.com",source:"GridGuide Referral"},
-    {id:"L004",customer:"Carol W.", location:"Pflugerville, TX",type:"Smart Panel",  budget:"$3–5k",  received:"3 days ago",status:"scheduled",notes:"200A panel upgrade + solar prep.",phone:"(512) 555-0147",email:"carol.w@email.com",source:"GridGuide Search"},
-  ];
-
-  const filtered=DEMO_LEADS.filter(l=>filter==="all"||l.status===filter);
+  // Real leads from GET /api/installers/leads. Contact details for Free
+  // installers are redacted by the API itself, not just blurred here.
+  const [rawLeads,setRawLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [busy,setBusy]=useState("");
+  const [actionMsg,setActionMsg]=useState("");
+  const load=useCallback(()=>{
+    setLoading(true);setLoadErr("");
+    fetch("/api/installers/leads",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>setRawLeads(Array.isArray(d.leads)?d.leads:[]))
+      .catch(e=>{setRawLeads([]);setLoadErr(e.message||"Could not load leads");})
+      .finally(()=>setLoading(false));
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const ago=d=>{const m=Math.round((Date.now()-new Date(d).getTime())/60000);if(m<60)return `${Math.max(m,1)} min ago`;const h=Math.round(m/60);if(h<24)return `${h} hr${h>1?"s":""} ago`;const dd=Math.round(h/24);return dd===1?"Yesterday":`${dd} days ago`;};
+  const leads=rawLeads.map(l=>({
+    id:l.id, raw:l,
+    customer:l.customerName, type:l.projectType, location:l.address,
+    budget:l.estimatedValue?`$${l.estimatedValue.toLocaleString()}`:"Not provided",
+    received:ago(l.createdAt), status:(l.status||"").toLowerCase(),
+    notes:l.notes||"", phone:l.customerPhone||"—", email:l.customerEmail||"—",
+    source:"GridGuide", hasJob:!!l.job,
+  }));
+  const filtered=leads.filter(l=>filter==="all"||l.status===filter);
+  const sel=selected?leads.find(l=>l.id===selected.id)||null:null;
+  const setStatus=async(lead,status)=>{
+    setBusy(status);setActionMsg("");
+    try{
+      const r=await fetch(`/api/installers/leads?id=${encodeURIComponent(lead.id)}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Could not update lead");
+      setActionMsg(status==="CONVERTED"?"Lead won — a job was added to your Jobs tab.":"Lead updated.");
+      load();
+    }catch(e){setActionMsg(e.message);}
+    setBusy("");
+  };
 
   return(
     <div>
@@ -15540,7 +15569,7 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
           </p>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {isPro&&<Badge color={SH.teal} dot>{DEMO_LEADS.filter(l=>l.status==="new").length} new</Badge>}
+          {isPro&&<Badge color={SH.teal} dot>{leads.filter(l=>l.status==="new").length} new</Badge>}
           {!isPro&&(
             <Btn size="sm" variant="teal" onClick={()=>setTab&&setTab("membership")}>
               ⭐ Upgrade for Full Lead Tools
@@ -15570,7 +15599,7 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
 
       {/* Status filters */}
       <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-        {["all","new","contacted","quoted","scheduled","closed"].map(f=>(
+        {["all","new","contacted","quoted","converted","lost"].map(f=>(
           <button key={f} onClick={()=>setFilter(f)}
             style={{padding:"5px 11px",borderRadius:7,fontSize:10,fontWeight:500,
               background:filter===f?SH.teal:T_I.card,color:filter===f?"#0A0F1E":T_I.muted,
@@ -15583,8 +15612,12 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
       {/* Lead list */}
       <div style={{display:"grid",gridTemplateColumns:selected&&!isMobile?"1fr 360px":"1fr",gap:14}}>
         <Card T={T_I} pad={false}>
-          {filtered.length===0?(
-            <div style={{textAlign:"center",padding:32,color:T_I.dim,fontSize:12}}>No leads in this status.</div>
+          {loading?(
+            <div style={{textAlign:"center",padding:32,color:T_I.muted,fontSize:11}}>Loading leads…</div>
+          ):loadErr?(
+            <div style={{textAlign:"center",padding:32,color:SH.red,fontSize:11}}>{loadErr} <button onClick={load} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>
+          ):filtered.length===0?(
+            <div style={{textAlign:"center",padding:32,color:T_I.dim,fontSize:12}}>{leads.length===0?"No leads yet. New GridGuide leads in your service area will appear here.":"No leads in this status."}</div>
           ):filtered.map(l=>(
             <div key={l.id} onClick={()=>setSelected(selected?.id===l.id?null:l)}
               style={{padding:"13px 17px",borderBottom:`1px solid ${T_I.bord}22`,cursor:"pointer",
@@ -15609,7 +15642,7 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
         </Card>
 
         {/* Lead detail panel */}
-        {selected&&(
+        {sel&&(()=>{const selected=sel;return(
           <Card T={T_I}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
               <div>
@@ -15637,10 +15670,14 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
                   </div>
                 ))}
                 <div style={{padding:"9px 11px",background:T_I.hi,borderRadius:8,marginTop:10,marginBottom:14,fontSize:11,color:T_I.muted,lineHeight:1.6}}>{selected.notes}</div>
+                {actionMsg&&<div style={{fontSize:11,color:T_I.muted,marginBottom:8}}>{actionMsg}</div>}
                 <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                  <Btn T={T_I} full><Icon name="mail" size={13} color="#0A0F1E"/>Contact Customer</Btn>
-                  <Btn T={T_I} v="outline" full><Icon name="file" size={13} color={T_I.muted}/>Send Quote</Btn>
-                  <Btn T={T_I} v="outline" full><Icon name="calendar" size={13} color={T_I.muted}/>Schedule Survey</Btn>
+                  {selected.email!=="—"&&<Btn T={T_I} full onClick={()=>{window.location.href=`mailto:${selected.email}`;}}><Icon name="mail" size={13} color="#0A0F1E"/>Contact Customer</Btn>}
+                  <Btn T={T_I} v="outline" full onClick={()=>setTab&&setTab("proposals")}><Icon name="file" size={13} color={T_I.muted}/>Send Quote</Btn>
+                  {selected.status==="new"&&<Btn T={T_I} v="outline" full disabled={!!busy} onClick={()=>setStatus(selected,"CONTACTED")}>{busy==="CONTACTED"?"Saving…":"Mark Contacted"}</Btn>}
+                  {["new","contacted"].includes(selected.status)&&<Btn T={T_I} v="outline" full disabled={!!busy} onClick={()=>setStatus(selected,"QUOTED")}>{busy==="QUOTED"?"Saving…":"Mark Quoted"}</Btn>}
+                  {!["converted","lost"].includes(selected.status)&&<Btn T={T_I} v="outline" full disabled={!!busy} onClick={()=>setStatus(selected,"CONVERTED")}>{busy==="CONVERTED"?"Saving…":"Mark Won (create job)"}</Btn>}
+                  {!["converted","lost"].includes(selected.status)&&<Btn T={T_I} v="ghost" full disabled={!!busy} onClick={()=>setStatus(selected,"LOST")}>{busy==="LOST"?"Saving…":"Mark Lost"}</Btn>}
                 </div>
               </>
             ):(
@@ -15658,7 +15695,7 @@ const InstLeads=({currentPlan="PRO",setTab})=>{
               </div>
             )}
           </Card>
-        )}
+        );})()}
       </div>
     </div>
   );
@@ -15693,47 +15730,82 @@ const InstEarnings=()=>{
 
 const InstPayments=()=>{
   const {isMobile,isTablet}=useBP();
-  const [method,setMethod]=useState("card");
-  const invoices=[
-    {id:"INV-2041",desc:"Lead: James T. — Solar + Battery",date:"Jun 19",amount:85,status:"paid"},
-    {id:"INV-2040",desc:"Lead: Sarah L. — Solar Only",date:"Jun 18",amount:65,status:"paid"},
-    {id:"INV-2039",desc:"Lead: Tom H. — EV Charger",date:"Jun 17",amount:35,status:"paid"},
-    {id:"INV-2038",desc:"Lead: Linda R. — Battery Only",date:"Jun 16",amount:65,status:"pending"},
-    {id:"INV-2037",desc:"Lead: Mike P. — Solar + Battery",date:"Jun 14",amount:85,status:"paid"},
-  ];
-  const plans=[
-    {id:"FREE",       name:"Free",       fee:"Free",    successFee:"15% recurring commission", trial:null,            desc:"Free to join. Earn 15% recurring commission on qualifying homeowner subscriptions you refer.",perks:["Company profile","Basic lead management","Add completed installs","Refer homeowners to GridGuide","Basic reporting"],active:true,highlight:false,color:SH.teal},
-    {id:"PRO",        name:"Pro",        fee:"$99/mo",  successFee:"25% recurring commission", trial:"14-day free",   desc:"Priority placement + 25% recurring commission on qualifying homeowner subscriptions you refer. Includes a 14-day free trial, no credit card required.",perks:["Everything in Free","Priority directory placement","Lead tracking dashboard","Proposal tools","Customer onboarding tools","Utility interconnection tracking","25% recurring referral revenue"],active:false,highlight:true,color:SH.gold},
-    {id:"ENTERPRISE", name:"Enterprise", fee:"$499/mo", successFee:"30% recurring commission", trial:null,            desc:"30% recurring commission on qualifying homeowner subscriptions you refer, multi-user accounts, territory management, and a dedicated account manager.",perks:["Everything in Pro","Multi-user accounts","Territory management","CRM integrations","Co-branded homeowner onboarding","API access","Dedicated account manager"],active:false,highlight:false,color:SH.purple},
-  ];
-  const leadPricing=[
-    {type:"Solar + Battery",min:75,max:200,color:SH.gold,icon:"sun"},
-    {type:"Solar Only",min:50,max:150,color:SH.gold,icon:"sun"},
-    {type:"Battery Only",min:30,max:100,color:SH.teal,icon:"battery"},
-    {type:"EV Charger",min:20,max:75,color:SH.purple,icon:"zap"},
-    {type:"Whole-Home Upgrade",min:75,max:200,color:SH.orange,icon:"home"},
-  ];
-  const addOns=[
-    {name:"Featured Placement",price:"$199/mo",icon:"trending",desc:"Top of search results in your service areas"},
-    {name:"AI Quote Generator",price:"$29/mo",icon:"cpu",desc:"Instant AI-powered project quotes for customers"},
-    {name:"CRM & Pipeline",price:"$49/mo",icon:"users",desc:"Lead tracking, follow-up automation, and pipeline management"},
-    {name:"Marketing Package",price:"$99/mo",icon:"star",desc:"Branded profile, social assets, and GridGuide promotion"},
-    {name:"Extra Service Area",price:"$25–$50/market",icon:"map",desc:"Expand to additional cities and ZIP code coverage"},
-  ];
+  const [membership,setMembership]=useState(null);   // {current, plans}
+  const [invoices,setInvoices]=useState([]);
+  const [jobStats,setJobStats]=useState(null);
+  const [jobs,setJobs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
+  const [invErr,setInvErr]=useState("");
+  const [busy,setBusy]=useState("");
+  const [msg,setMsg]=useState({type:"",text:""});
+
+  const getJson=async(url,opts)=>{const r=await fetch(url,{credentials:"include",...opts});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;};
+
+  const load=useCallback(()=>{
+    setLoading(true);setLoadErr("");
+    Promise.allSettled([getJson("/api/installers/membership"),getJson("/api/installers/invoices"),getJson("/api/installers/jobs")])
+      .then(([m,inv,j])=>{
+        if(m.status==="fulfilled") setMembership(m.value); else setLoadErr(m.reason?.message||"Could not load membership");
+        if(inv.status==="fulfilled"){setInvoices(inv.value.invoices||[]);setInvErr("");} else {setInvoices([]);setInvErr(inv.reason?.message||"Could not load invoices");}
+        if(j.status==="fulfilled"){setJobStats(j.value.stats||null);setJobs(j.value.jobs||[]);}
+      })
+      .finally(()=>setLoading(false));
+  },[]);
+  useEffect(()=>{
+    load();
+    try{const q=new URLSearchParams(window.location.search).get("membership");
+      if(q==="success") setMsg({type:"ok",text:"Checkout complete. Your plan updates as soon as Stripe confirms the subscription — this can take a few seconds."});
+      if(q==="cancelled") setMsg({type:"info",text:"Checkout cancelled. Your plan hasn't changed."});
+    }catch{}
+  },[load]);
+
+  const changePlan=async(planId)=>{
+    if(planId==="FREE"&&!window.confirm("Downgrade to Free? Your paid subscription will be cancelled now.")) return;
+    setBusy(planId);setMsg({type:"",text:""});
+    try{
+      const d=await getJson("/api/installers/membership",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:planId})});
+      if(d.checkoutUrl){window.location.href=d.checkoutUrl;return;}
+      setMsg({type:"ok",text:d.message||"Plan updated."});load();
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setBusy("");
+  };
+  const openPortal=async()=>{
+    setBusy("portal");setMsg({type:"",text:""});
+    try{const d=await getJson("/api/installers/billing-portal",{method:"POST"});if(d.url){window.location.href=d.url;return;}}
+    catch(e){setMsg({type:"error",text:e.message});}
+    setBusy("");
+  };
+
+  const cur=membership?.current;
+  const plans=membership?.plans||{};
+  const curPlan=cur?.plan||"FREE";
+  const pct=v=>`${Math.round((v||0)*100)}%`;
+  const money=v=>`$${(v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2})}`;
+  const PLAN_META={FREE:{name:"Free",color:SH.teal},PRO:{name:"Pro",color:SH.gold,highlight:true},ENTERPRISE:{name:"Enterprise",color:SH.purple}};
+  const completed=jobs.filter(j=>(j.status||"").toUpperCase()==="COMPLETED");
+  const feesOnCompleted=completed.reduce((a,j)=>a+(j.successFee||0),0);
+  const STATUS_LABEL={active:"Active",trialing:"Trial",past_due:"Payment failed",unpaid:"Unpaid",incomplete:"Incomplete",canceled:"Cancelled"};
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-        <div><h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Payments & Lead Billing</h1><p style={{color:T_I.muted,fontSize:11,marginTop:2}}>Pay GridGuide for leads · Manage billing method · View invoices</p></div>
-        <Badge color={SH.teal} dot>Pay-Per-Lead Active</Badge>
+        <div><h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Payments & Membership</h1><p style={{color:T_I.muted,fontSize:11,marginTop:2}}>Your plan · Success fees · Billing method · Invoices</p></div>
+        {cur&&<Badge color={(PLAN_META[curPlan]||PLAN_META.FREE).color} dot>{(PLAN_META[curPlan]||PLAN_META.FREE).name} plan{cur.membershipStatus&&cur.membershipStatus!=="active"?` · ${STATUS_LABEL[cur.membershipStatus]||cur.membershipStatus}`:""}</Badge>}
       </div>
 
-      {/* Stats */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":isTablet?"1fr 1fr":"repeat(3,1fr)",gap:12,marginBottom:20}}>
+      {msg.text&&<div style={{marginBottom:14,padding:"10px 14px",borderRadius:9,fontSize:11,background:msg.type==="error"?`${SH.red}12`:`${SH.teal}10`,color:msg.type==="error"?SH.red:SH.teal}}>{msg.text}</div>}
+      {loading&&<div style={{fontSize:11,color:T_I.muted,marginBottom:14}}>Loading billing…</div>}
+      {!loading&&loadErr&&<div style={{marginBottom:14,fontSize:11,color:SH.red}}>{loadErr} <button onClick={load} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>}
+      {cur?.membershipStatus==="past_due"&&<div style={{marginBottom:14,padding:"10px 14px",borderRadius:9,fontSize:11,background:`${SH.orange}12`,color:SH.orange}}>Your last membership payment failed, so your account is on Free rates. Update your payment method to restore your plan.</div>}
+
+      {/* Real stats from your jobs and plan */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:20}}>
         {[
-          {icon:"dollar",l:"Spent This Month",v:"$335",c:SH.gold},
-          {icon:"users",l:"Leads Purchased",v:"4",c:SH.teal},
-          {icon:"trending",l:"Avg Lead Cost",v:"$83.75",c:SH.purple},
-          {icon:"award",l:"Conversion Rate",v:"75%",c:SH.green},
+          {icon:"percent",l:"Your success fee",v:cur?pct(cur.successFeeRate):"—",c:SH.gold},
+          {icon:"users",l:"Referral revenue share",v:cur?pct(cur.revenueSharePct):"—",c:SH.teal},
+          {icon:"check",l:"Completed jobs",v:jobStats?String(jobStats.completed??completed.length):"—",c:SH.green},
+          {icon:"dollar",l:"Success fees on completed jobs",v:jobStats?money(feesOnCompleted):"—",c:SH.purple},
         ].map(s=>(
           <div key={s.l} style={{background:T_I.card,border:`1px solid ${T_I.bord}`,borderRadius:12,padding:"16px 18px"}}>
             <div style={{width:32,height:32,borderRadius:9,background:`${s.c}14`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:10}}><Ic n={s.icon} s={16} c={s.c}/></div>
@@ -15744,136 +15816,64 @@ const InstPayments=()=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:14,marginBottom:14}}>
-        {/* Installer Plans */}
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:600,color:T_I.text,marginBottom:2}}>Membership Plans</div>
-          {plans.map(p=>(
-            <div key={p.id} style={{padding:"16px",background:p.active?`${p.color}0a`:T_I.card,borderRadius:12,border:`2px solid ${p.active?p.color:p.highlight?p.color+"44":T_I.bord}`,cursor:"pointer",transition:"all .18s",position:"relative"}}
-              onMouseEnter={e=>{if(!p.active)e.currentTarget.style.borderColor=p.color;}}
-              onMouseLeave={e=>{if(!p.active)e.currentTarget.style.borderColor=p.highlight?p.color+"44":T_I.bord;}}>
-              {p.highlight&&<div style={{position:"absolute",top:-1,right:14}}><Badge color={SH.gold}>Most Popular</Badge></div>}
+          {["FREE","PRO","ENTERPRISE"].filter(k=>plans[k]).map(k=>{
+            const p=plans[k]; const m=PLAN_META[k]; const active=curPlan===k;
+            const trialAvailable=p.trial&&!cur?.trialEndsAt;
+            return(
+            <div key={k} style={{padding:"16px",background:active?`${m.color}0a`:T_I.card,borderRadius:12,border:`2px solid ${active?m.color:m.highlight?m.color+"44":T_I.bord}`,position:"relative"}}>
+              {m.highlight&&!active&&<div style={{position:"absolute",top:-1,right:14}}><Badge color={SH.gold}>Most Popular</Badge></div>}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:10}}>
                 <div>
-                  <div style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:T_I.text}}>{p.name}</div>
-                  <div style={{fontSize:11,color:T_I.muted,marginTop:2,maxWidth:300}}>{p.desc}</div>
+                  <div style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:T_I.text}}>{m.name}</div>
+                  <div style={{fontSize:11,color:T_I.muted,marginTop:2,maxWidth:320}}>{pct(p.shareRate)} recurring commission on qualifying homeowner subscriptions you refer · {pct(p.leadSuccessFee)} success fee on completed GridGuide leads{trialAvailable?` · ${p.trial}-day free trial`:""}</div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:p.color}}>{p.fee}</div>
-                  <div style={{fontSize:10,color:T_I.muted,marginTop:1}}>{p.successFee}</div>
+                  <div style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:m.color}}>{p.price>0?`${money(p.price)}/mo`:"Free"}</div>
                 </div>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
-                {p.perks.slice(0,4).map(perk=>(
-                  <div key={perk} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:T_I.muted}}>
-                    <Ic n="check" s={10} c={p.color}/>{perk}
-                  </div>
-                ))}
-                {p.perks.length>4&&<div style={{fontSize:10,color:p.color}}>+{p.perks.length-4} more</div>}
+                {(p.features||[]).slice(0,4).map(f=>(<div key={f} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:T_I.muted}}><Ic n="check" s={10} c={m.color}/>{f}</div>))}
+                {(p.features||[]).length>4&&<div style={{fontSize:10,color:m.color}}>+{p.features.length-4} more</div>}
               </div>
-              {p.active
-                ?<Badge color={p.color} dot>Current Plan</Badge>
-                :<Btn v="outline" sz="sm" T={T_I} style={{borderColor:p.color,color:p.color}} onClick={()=>{ { fetch("/api/memberships/checkout",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:p.id})}).then(r=>r.json()).then(d=>{ if(d.url) window.location.href=d.url; }).catch(()=>{}); } }}>Upgrade to {p.name}</Btn>}
+              {active
+                ?<Badge color={m.color} dot>Current Plan</Badge>
+                :<Btn v="outline" sz="sm" T={T_I} disabled={!!busy||loading} style={{borderColor:m.color,color:m.color}} onClick={()=>changePlan(k)}>{busy===k?"Working…":k==="FREE"?"Downgrade to Free":trialAvailable?`Start ${p.trial}-day trial`:`Upgrade to ${m.name}`}</Btn>}
             </div>
-          ))}
+          );})}
         </div>
 
-        {/* Payment method */}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <Card T={T_I} title="Payment Method">
-            <div style={{display:"flex",gap:8,marginBottom:14}}>
-              {["card","ach"].map(m=>(
-                <button key={m} onClick={()=>setMethod(m)}
-                  style={{flex:1,padding:"8px",borderRadius:8,background:method===m?`${SH.teal}14`:T_I.hi,border:`1.5px solid ${method===m?SH.teal:T_I.bord}`,fontSize:11,fontWeight:600,color:method===m?SH.teal:T_I.muted,transition:"all .15s",textTransform:"uppercase"}}>
-                  {m==="card"?"💳 Card":"🏦 ACH Bank"}
-                </button>
-              ))}
-            </div>
-            {method==="card"?(
-              <>
-                <div style={{padding:"12px 14px",background:T_I.hi,borderRadius:9,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div><div style={{fontSize:12,fontWeight:500,color:T_I.text}}>Visa ending in 4821</div><div style={{fontSize:10,color:T_I.muted,marginTop:2}}>Expires 08/27</div></div>
-                  <Badge color={SH.green}>Default</Badge>
-                </div>
-                <Btn v="ghost" sz="sm" T={T_I} full><Ic n="plus" s={12} c={SH.teal}/>Add New Card</Btn>
-              </>
-            ):(
-              <>
-                <div style={{padding:"12px 14px",background:T_I.hi,borderRadius:9,marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:500,color:T_I.text}}>Chase Business Checking</div>
-                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>Account •••• 6293 · Verified</div>
-                </div>
-                <Btn v="ghost" sz="sm" T={T_I} full><Ic n="plus" s={12} c={SH.teal}/>Link Bank Account</Btn>
-              </>
-            )}
-            <div style={{marginTop:12,padding:"9px 12px",background:`${SH.teal}0a`,border:`1px solid ${SH.teal}20`,borderRadius:8,fontSize:10,color:SH.teal,display:"flex",gap:7,alignItems:"flex-start"}}>
-              <Ic n="shield" s={12} c={SH.teal} st={{flexShrink:0,marginTop:1}}/>
-              Payments processed securely. GridGuide never stores full card numbers.
-            </div>
+            <div style={{fontSize:11,color:T_I.muted,lineHeight:1.6,marginBottom:12}}>Cards and bank accounts are managed securely in Stripe's billing portal. GridGuide never stores card numbers.</div>
+            <Btn T={T_I} sz="sm" full disabled={busy==="portal"} onClick={openPortal}><Ic n="shield" s={12} c="#0A0F1E"/>{busy==="portal"?"Opening…":"Manage billing in Stripe"}</Btn>
           </Card>
-
           <Card T={T_I} title="How Success Fees Work">
             <div style={{padding:"12px 14px",background:`${SH.teal}0a`,border:`1px solid ${SH.teal}20`,borderRadius:9,marginBottom:14,fontSize:11,color:T_I.text,lineHeight:1.7}}>
               <strong style={{color:SH.teal,display:"block",marginBottom:4}}>GridGuide only charges when you get paid.</strong>
-              Free to join. No lead fees. A small success fee is collected only after a GridGuide-generated project is completed and paid by the customer.
+              No lead fees. A success fee applies only to GridGuide-generated projects that are completed. Jobs you source yourself have no fee.
             </div>
-            {[{l:"Your plan",v:"Free",c:SH.teal},{l:"Success fee",v:"5% of project",c:SH.gold},{l:"Fee trigger",v:"On project payment",c:T_I.text},{l:"Monthly fee",v:"$0",c:SH.green},{l:"Lead fee",v:"$0",c:SH.green}].map(r=>(
+            {[{l:"Your plan",v:(PLAN_META[curPlan]||PLAN_META.FREE).name},{l:"Success fee",v:cur?`${pct(cur.successFeeRate)} of project`:"—"},{l:"Fee trigger",v:"Completed GridGuide lead"},{l:"Monthly fee",v:cur?money(cur.membershipMonthlyFee):"—"},{l:"Lead fee",v:"$0"}].map(r=>(
               <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
-                <span style={{color:T_I.muted}}>{r.l}</span>
-                <span style={{color:r.c,fontWeight:600}}>{r.v}</span>
+                <span style={{color:T_I.muted}}>{r.l}</span><span style={{color:T_I.text,fontWeight:600}}>{r.v}</span>
               </div>
             ))}
-            <div style={{marginTop:12,padding:"9px 12px",background:`${SH.gold}0a`,border:`1px solid ${SH.gold}20`,borderRadius:8,fontSize:10,color:SH.gold,display:"flex",gap:7}}>
-              <Ic n="trending" s={12} c={SH.gold} st={{flexShrink:0,marginTop:1}}/>
-              Upgrade to Pro for priority directory placement, a 14-day free trial, and 25% recurring referral revenue.
-            </div>
           </Card>
         </div>
       </div>
 
-      {/* Invoice history */}
-      <Card T={T_I} title="Invoice History" action={<Btn v="outline" sz="sm" T={T_I}><Ic n="download" s={12} c={T_I.muted}/>Download All</Btn>}>
-        <Tbl T={T_I} cols={[
-          {key:"id",label:"Invoice",mono:true,render:v=><span style={{color:T_I.muted,fontSize:10}}>{v}</span>},
-          {key:"desc",label:"Description"},
-          {key:"date",label:"Date",nowrap:true},
-          {key:"amount",label:"Amount",render:v=><span style={{fontFamily:"'Space Grotesk'",fontWeight:700,color:SH.gold}}>${v}</span>},
-          {key:"status",label:"Status",render:v=><Badge color={v==="paid"?SH.green:SH.orange}>{v}</Badge>},
-          {key:"id",label:"",render:()=><Btn v="outline" sz="sm" T={T_I}><Ic n="download" s={11} c={T_I.muted}/>PDF</Btn>},
-        ]} rows={invoices}/>
+      <Card T={T_I} title="Invoice History">
+        {invErr&&<div style={{fontSize:11,color:SH.red,padding:"8px 0"}}>{invErr}</div>}
+        {!invErr&&<Tbl T={T_I} empty="No invoices yet." cols={[
+          {key:"number",label:"Invoice",mono:true,render:v=><span style={{color:T_I.muted,fontSize:10}}>{v}</span>},
+          {key:"description",label:"Description"},
+          {key:"date",label:"Date",nowrap:true,render:v=>new Date(v).toLocaleDateString()},
+          {key:"amount",label:"Amount",render:v=><span style={{fontFamily:"'Space Grotesk'",fontWeight:700,color:SH.gold}}>{money(v)}</span>},
+          {key:"status",label:"Status",render:v=><Badge color={v==="paid"?SH.green:v==="open"?SH.orange:T_I.dim}>{v}</Badge>},
+          {key:"pdfUrl",label:"",render:(v,row)=>(v||row.hostedUrl)?<Btn v="outline" sz="sm" T={T_I} onClick={()=>window.open(v||row.hostedUrl,"_blank","noopener")}><Ic n="download" s={11} c={T_I.muted}/>PDF</Btn>:null},
+        ]} rows={invoices}/>}
       </Card>
-
-      {/* Reference lead pricing & add-ons */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
-        <Card T={T_I} title="Reference Lead Pricing" action={<span style={{fontSize:10,color:T_I.dim}}>Pay-per-lead option</span>}>
-          <div style={{fontSize:11,color:T_I.muted,marginBottom:10,lineHeight:1.6}}>Alternative pricing if you prefer pay-per-lead over the success fee model:</div>
-          {leadPricing.map(l=>(
-            <div key={l.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T_I.bord}22`}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <Ic n={l.icon} s={13} c={l.color}/>
-                <span style={{fontSize:11,color:T_I.text}}>{l.type}</span>
-              </div>
-              <span style={{fontFamily:"'Space Grotesk'",fontSize:11,fontWeight:600,color:l.color}}>${l.min}–${l.max}</span>
-            </div>
-          ))}
-          <div style={{marginTop:10,fontSize:10,color:T_I.dim}}>GridGuide recommends the success fee model. Pay-per-lead available on request.</div>
-        </Card>
-
-        <Card T={T_I} title="Optional Add-Ons">
-          {addOns.map(a=>(
-            <div key={a.name} style={{padding:"9px 0",borderBottom:`1px solid ${T_I.bord}22`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
-                <div style={{display:"flex",alignItems:"center",gap:7}}>
-                  <Ic n={a.icon} s={12} c={SH.teal}/>
-                  <span style={{fontSize:11,fontWeight:500,color:T_I.text}}>{a.name}</span>
-                </div>
-                <span style={{fontFamily:"'Space Grotesk'",fontSize:11,fontWeight:700,color:SH.gold,flexShrink:0,marginLeft:8}}>{a.price}</span>
-              </div>
-              <div style={{fontSize:10,color:T_I.muted,paddingLeft:19}}>{a.desc}</div>
-            </div>
-          ))}
-          <Btn v="ghost" sz="sm" T={T_I} style={{marginTop:10}}><Ic n="plus" s={12} c={SH.teal}/>Add to Plan</Btn>
-        </Card>
-      </div>
     </div>
   );
 };
@@ -16072,6 +16072,15 @@ function InstRegister({onLogin, onSwitch}) {
       const instData = await instRes.json();
       if(!instRes.ok){ setErr(instData.error||"Account created, but the company profile couldn't be submitted. Contact support."); setLoading(false); return; }
 
+      // New installers start on Free; a paid plan picked at signup goes through Stripe checkout.
+      if(instData.requestedPlan&&instData.requestedPlan!=="FREE"){
+        try{
+          const mr=await fetch("/api/installers/membership",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:instData.requestedPlan})});
+          const md=await mr.json().catch(()=>({}));
+          if(mr.ok&&md.checkoutUrl){ window.location.href=md.checkoutUrl; return; }
+        }catch{}
+      }
+
       onLogin({name:form.contact||"New Installer", initials:(form.contact||"NI").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2), role:"Installer (Pending Verification)", email:form.email});
     }catch(e){
       setErr("Network error — please try again.");
@@ -16211,6 +16220,18 @@ function InstallerApp({onSwitchToSite=null}) {
       .finally(()=>setCheckingSession(false));
   },[]);
 
+  // The installer's real plan (Installer.plan, not the homeowner User.plan).
+  // Screens used to receive a hard-coded currentPlan="PRO".
+  const [instPlan,setInstPlan]=useState(null);
+  useEffect(()=>{
+    if(!user) return;
+    fetch("/api/installers/membership",{credentials:"include"})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>setInstPlan(d?.current?.plan||"FREE"))
+      .catch(()=>setInstPlan("FREE"));
+  },[user,tab]);
+  const plan=instPlan||"FREE";
+
   if(checkingSession) return(
     <div style={{minHeight:"100vh",background:T_I.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <style>{portalCss}</style>
@@ -16225,22 +16246,23 @@ function InstallerApp({onSwitchToSite=null}) {
 
   const renderTab=()=>{
     switch(tab){
-      case"dashboard": return <InstDash setTab={setTab} user={user}/>;
-      case"leads":         return <InstLeads setTab={setTab} currentPlan="PRO"/>;
+      case"dashboard": return <InstDash setTab={setTab} user={user} currentPlan={plan}/>;
+      case"leads":         return <InstLeads setTab={setTab} currentPlan={plan}/>;
       case"jobs":          return <InstJobsDB setTab={setTab}/>;
       case"proposals":     return <InstProposals/>;
       case"interconnect":  return <InstInterconnection/>;
       case"schedule":  return <InstSchedule/>;
       case"reviews":   return <InstReviews/>;
       case"earnings":  return <InstEarnings/>;
-      case"revenue":   return <InstRevenue setTab={setTab} currentPlan="PRO" openModal={setGModal}/>;
-      case"referrals": return <InstReferrals openModal={setGModal}/>;
-      case"membership":return <InstMembership currentPlan="PRO" openModal={setGModal}/>;
+      case"revenue":   return <InstRevenue setTab={setTab} currentPlan={plan} openModal={setGModal}/>;
+      case"referrals": return <InstReferrals openModal={setGModal} currentPlan={plan}/>;
+      // One real plan-management screen (the old InstMembership's Confirm button did nothing).
+      case"membership":return <InstPayments/>;
       case"enterprise-networks":return <InstEnterpriseNetworks/>;
-      case"payments":  return <InstPayments setGModal={setGModal}/>;
+      case"payments":  return <InstPayments/>;
       case"profile":   return <InstProfile/>;
       case"settings":  return <InstSettings/>;
-      default:          return <InstDash setTab={setTab}/>;
+      default:          return <InstDash setTab={setTab} user={user} currentPlan={plan}/>;
     }
   };
   return(
@@ -16353,11 +16375,13 @@ function AdminSales(){
 
   const VALID_NEXT={PENDING:["PROCESSING","CANCELLED"],PAID:["PROCESSING","CANCELLED","REFUNDED"],PROCESSING:["SHIPPED","CANCELLED"],SHIPPED:["DELIVERED"],DELIVERED:["REFUNDED"]};
 
+  const [ordersErr,setOrdersErr]=useState("");
   const loadOrders=()=>{
-    setLoadingOrders(true);
+    setLoadingOrders(true); setOrdersErr("");
     fetch(`/api/admin/orders${statusFilter!=="all"?`?status=${statusFilter}`:""}`,{credentials:"include"})
-      .then(r=>r.json()).then(d=>{if(d.orders) setOrders(d.orders); setLoadingOrders(false);})
-      .catch(()=>setLoadingOrders(false));
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>{setOrders(Array.isArray(d.orders)?d.orders:[]); setLoadingOrders(false);})
+      .catch(e=>{setOrders([]); setOrdersErr(e.message||"Could not load orders"); setLoadingOrders(false);});
   };
   React.useEffect(loadOrders,[statusFilter]);
 
@@ -16383,15 +16407,9 @@ function AdminSales(){
     setSaving(false);
   };
 
-  // Demo orders
-  const DEMO_ORDERS=[
-    {id:"ORD-DEMO-001",status:"PAID",      total:699,   subtotal:699,   createdAt:"2026-07-10",user:{name:"Sarah M.",email:"sarah@email.com"},items:[{product:{name:"ChargePoint Home Flex"},quantity:1,price:699}]},
-    {id:"ORD-DEMO-002",status:"SHIPPED",   total:4200,  subtotal:4200,  createdAt:"2026-07-08",user:{name:"James T.",email:"james@email.com"},items:[{product:{name:"Enphase IQ Battery 5P"},quantity:1,price:4200}],trackingNumber:"1Z99AA1234",carrier:"UPS"},
-    {id:"ORD-DEMO-003",status:"DELIVERED", total:498,   subtotal:498,   createdAt:"2026-07-05",user:{name:"Rivera Family",email:"rivera@email.com"},items:[{product:{name:"ecobee SmartThermostat"},quantity:2,price:249}]},
-    {id:"ORD-DEMO-004",status:"PROCESSING",total:13299, subtotal:13299, createdAt:"2026-07-11",user:{name:"Carol W.",email:"carol@email.com"},items:[{product:{name:"Tesla Powerwall 3"},quantity:1,price:13299}]},
-    {id:"ORD-DEMO-005",status:"CANCELLED", total:399,   subtotal:399,   createdAt:"2026-07-03",user:{name:"Mike T.",email:"mike@email.com"},items:[{product:{name:"Sense Home Monitor"},quantity:1,price:399}],cancellationReason:"Customer request"},
-  ];
-  const displayOrders=orders.length>0?orders:DEMO_ORDERS;
+  // Real orders only. The old DEMO_ORDERS fallback showed 5 fake customer
+  // orders whenever the list was empty OR the request failed.
+  const displayOrders=orders;
   const filteredOrders=statusFilter==="all"?displayOrders:displayOrders.filter(o=>o.status===statusFilter);
 
   return(
@@ -16420,6 +16438,8 @@ function AdminSales(){
         <Card T={T} pad={false}>
           {loadingOrders?(
             <div style={{padding:24,textAlign:"center",color:T.muted,fontSize:11}}>Loading orders…</div>
+          ):ordersErr?(
+            <div style={{padding:24,textAlign:"center",color:SH.orange,fontSize:11}}>{ordersErr} <button onClick={loadOrders} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11}}>Retry</button></div>
           ):filteredOrders.length===0?(
             <div style={{padding:32,textAlign:"center",color:T.muted,fontSize:12}}>No orders with status: {statusFilter}</div>
           ):filteredOrders.map(o=>(

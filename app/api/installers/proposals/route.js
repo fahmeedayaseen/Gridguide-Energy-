@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getLeadSuccessFeeRate } from "@/lib/installer-plans.js";
 
 const createSchema = z.object({
   leadId:      z.string(),
@@ -157,6 +158,8 @@ export async function PATCH(request) {
       where: { installerId: installer.id, leadId: proposal.leadId },
     });
     if (!existingJob) {
+      // Proposals are always for a GridGuide lead, so the plan's lead success fee applies.
+      const acceptedFeeRate = await getLeadSuccessFeeRate(installer.plan);
       await prisma.job.create({
         data: {
           installerId:  installer.id,
@@ -164,8 +167,9 @@ export async function PATCH(request) {
           title:        proposal.title,
           address:      proposal.lead.address,
           projectValue: proposal.amount,
-          successFee:   proposal.amount * (installer.successFeeRate || 0.05),
-          status:       "SCHEDULED",
+          successFee:     proposal.amount * acceptedFeeRate,
+          successFeeRate: acceptedFeeRate,
+          status:         "SCHEDULED",
         },
       });
     }

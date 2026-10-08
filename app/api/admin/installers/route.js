@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { requireRole } from "@/lib/jwt.js";
 import { z } from "zod";
+import { installerPlanFields } from "@/lib/installer-plans.js";
 
 const PLAN_SHARE  = { FREE: 0.15, PRO: 0.25, ENTERPRISE: 0.30 };
 const PLAN_FEE    = { FREE: 0,    PRO: 99,    ENTERPRISE: 499  };
@@ -122,12 +123,8 @@ export async function PATCH(request) {
     ...(data.verificationStatus && { verificationStatus: data.verificationStatus }),
     ...(data.insuranceVerified  !== undefined && { insuranceVerified: data.insuranceVerified }),
     ...(data.backgroundChecked  !== undefined && { backgroundChecked: data.backgroundChecked }),
-    ...(data.plan && {
-      plan:                 data.plan,
-      revenueSharePct:      PLAN_SHARE[data.plan],
-      membershipMonthlyFee: PLAN_FEE[data.plan],
-      successFeeRate:       SUCCESS_FEE[data.plan],
-    }),
+    // Admin plan override (comps, pilots): plan, fee and shares always change together.
+    ...(data.plan && await installerPlanFields(data.plan)),
   };
 
   const installer = await prisma.installer.update({

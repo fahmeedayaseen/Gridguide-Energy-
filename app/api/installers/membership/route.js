@@ -1,30 +1,26 @@
 /**
- * GET   /api/installers/membership       — current plan + upgrade options
- * POST  /api/installers/membership       — upgrade/downgrade plan via Stripe
+ * GET   /api/installers/membership  — current plan + plan options (live, admin-configured)
+ * POST  /api/installers/membership  — change plan
+ *
+ * Paid plans (PRO / ENTERPRISE) are NEVER granted here. POST returns a Stripe
+ * Checkout URL; access is granted only by the webhook
+ * (app/api/payments/webhook) after Stripe confirms the subscription is
+ * active or trialing. Previously this route set plan=ENTERPRISE for any
+ * caller, with or without a payment method, so anyone could self-upgrade free.
+ *
+ * Downgrading to FREE cancels the Stripe subscription and applies Free
+ * economics immediately.
  */
 import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
-import Stripe from "stripe";
+import { stripe } from "@/lib/stripe.js";
+import { getInstallerPlans, installerPlanFields } from "@/lib/installer-plans.js";
 import { z } from "zod";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", { apiVersion: "2024-04-10" });
-
-const PLANS = {
-  FREE:       { price: 0,   shareRate: 0.15, vppShare: 0.00, trial: null, leadSuccessFee: 0.08,  // 8% on GridGuide-generated leads
-    features: ["Company profile","Basic lead management","Add installations","Refer homeowners","Basic reporting"] },
-  PRO:        { price: 99,  shareRate: 0.25, vppShare: 0.05, trial: 14,   leadSuccessFee: 0.05,  // 5% — reward for Pro investment
-    features: ["Everything in Free","Priority directory placement","Lead tracking dashboard","Proposal tools","Customer onboarding tools","Utility interconnection tracking","25% recurring referral revenue"] },
-  ENTERPRISE: { price: 499, shareRate: 0.30, vppShare: 0.10, trial: null, leadSuccessFee: 0.03,  // 3% — highest tier, lowest fee
-    features: ["Everything in Pro","Multi-user accounts","Territory management","CRM integrations","White-label homeowner onboarding","API access","Dedicated account manager","Bulk homeowner imports"] },
-};
-// Enterprise uses a guided 30-day pilot (sales-assisted), not a self-serve trial.
-const ENTERPRISE_PILOT_DAYS = 30;
-
-const upgradeSchema = z.object({
-  plan:         z.enum(["FREE","PRO","ENTERPRISE"]),
-  paymentMethodId: z.string().optional(),
-});
+const changeSchema = z.object({
+  plan: z.enum(["FREE", "PRO", "ENTERPRISE"]),
+}).strict();
 
 export async function GET(request) {
   const auth = await authenticateRequest(request);
@@ -32,88 +28,98 @@ export async function GET(request) {
 
   const installer = await prisma.installer.findUnique({
     where: { userId: auth.user.id },
-    select: { id: true, plan: true, membershipMonthlyFee: true, membershipStatus: true,
-              membershipRenewsAt: true, revenueSharePct: true, totalReferredUsers: true,
-              activeReferredUsers: true, monthlyReferralEarnings: true, referralCode: true },
+    select: {
+      id: true, plan: true, membershipMonthlyFee: true, membershipStatus: true,
+      membershipRenewsAt: true, trialEndsAt: true, revenueSharePct: true, successFeeRate: true,
+      totalReferredUsers: true, activeReferredUsers: true, monthlyReferralEarnings: true, referralCode: true,
+      stripeSubscriptionId: true,
+    },
   });
   if (!installer) return err("Installer account not found.", 404);
 
-  return ok({
-    current: installer,
-    plans:   PLANS,
-    upgradeImpact: {
-      fromPro: {
-        extraSharePct:      5,
-        example500Homes:    500 * 10 * 0.05, // extra $250/mo at 500 homes
-        example2000Homes:   2000 * 10 * 0.05,
-      },
-    },
-  });
+  const { stripeSubscriptionId, ...current } = installer;
+  return ok({ current: { ...current, hasSubscription: !!stripeSubscriptionId }, plans: await getInstallerPlans() });
 }
 
 export async function POST(request) {
   const auth = await authenticateRequest(request);
   if (auth.error) return err(auth.error, auth.status);
 
-  const { data, error } = await parseBody(request, upgradeSchema);
+  const { data, error } = await parseBody(request, changeSchema);
   if (error) return err("Validation failed.", 400, error);
 
   const installer = await prisma.installer.findUnique({ where: { userId: auth.user.id } });
   if (!installer) return err("Installer account not found.", 404);
 
-  const plan     = PLANS[data.plan];
-  const prevPlan = PLANS[installer.plan];
-
-  let stripeSubscriptionId = installer.stripeSubscriptionId;
-
-  // Handle Stripe subscription if upgrading to paid plan
-  if (plan.price > 0 && data.paymentMethodId) {
-    let customerId = (await prisma.user.findUnique({ where: { id: auth.user.id }, select: { stripeCustomerId: true } }))?.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: auth.user.email });
-      customerId = customer.id;
-      await prisma.user.update({ where: { id: auth.user.id }, data: { stripeCustomerId: customerId } });
-    }
-
-    // Cancel existing subscription if any
+  // ── Downgrade to Free: cancel billing, apply Free economics now ──────────
+  if (data.plan === "FREE") {
     if (installer.stripeSubscriptionId) {
-      await stripe.subscriptions.cancel(installer.stripeSubscriptionId).catch(() => {});
+      try {
+        await stripe.subscriptions.cancel(installer.stripeSubscriptionId);
+      } catch (e) {
+        // Already-cancelled subscriptions are fine; anything else must not
+        // silently leave the installer billed while showing Free.
+        if (e?.code !== "resource_missing") return err("Could not cancel your subscription. Please try again.", 502);
+      }
     }
-
-    const subscription = await stripe.subscriptions.create({
-      customer: customerId,
-      items:    [{ price_data: { currency: "usd", product_data: { name: `GridGuide Installer ${data.plan}` }, unit_amount: plan.price * 100, recurring: { interval: "month" } } }],
-      payment_behavior: "default_incomplete",
-      default_payment_method: data.paymentMethodId,
-      // 14-day free trial for Pro — no charge during the trial period.
-      // Enterprise does not get a self-serve trial; it uses a sales-assisted
-      // 30-day guided pilot configured separately by the sales team.
-      ...(plan.trial ? { trial_period_days: plan.trial } : {}),
+    const updated = await prisma.installer.update({
+      where: { id: installer.id },
+      data: {
+        ...(await installerPlanFields("FREE")),
+        membershipStatus: "active",
+        stripeSubscriptionId: null,
+        trialEndsAt: null,
+        membershipRenewsAt: null,
+      },
     });
-    stripeSubscriptionId = subscription.id;
+    return ok({ installer: { plan: updated.plan }, message: "You're now on the Free plan." });
   }
 
-  const trialEndsAt = plan.trial
-    ? new Date(Date.now() + plan.trial * 86400000)
-    : null;
+  if (installer.plan === data.plan && ["active", "trialing"].includes(installer.membershipStatus)) {
+    return err(`You're already on the ${data.plan} plan.`, 409);
+  }
 
-  const updated = await prisma.installer.update({
-    where: { id: installer.id },
-    data: {
-      plan:                 data.plan,
-      membershipMonthlyFee: plan.price,
-      revenueSharePct:      plan.shareRate,
-      membershipRenewsAt:   new Date(Date.now() + 30 * 86400000),
-      trialEndsAt,          // null for Free/Enterprise, 14 days out for Pro
-      ...(stripeSubscriptionId && { stripeSubscriptionId }),
-    },
+  // ── Paid plan: send to Stripe Checkout; webhook grants access ────────────
+  const plans = await getInstallerPlans();
+  const plan  = plans[data.plan];
+  if (!(plan.price > 0)) return err("This plan is not available for checkout.", 400);
+
+  const user = await prisma.user.findUnique({ where: { id: auth.user.id }, select: { id: true, email: true, stripeCustomerId: true } });
+  let customerId = user?.stripeCustomerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({ email: user.email, metadata: { userId: user.id } });
+    customerId = customer.id;
+    await prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId: customerId } });
+  }
+
+  const origin   = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const metadata = { type: "installer_membership", installerId: installer.id, userId: user.id, plan: data.plan };
+  // A Pro trial is offered once; an installer who already used it pays from day one.
+  const trialDays = plan.trial && !installer.trialEndsAt ? plan.trial : null;
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{
+      price_data: {
+        currency: "usd",
+        product_data: { name: `GridGuide Installer ${data.plan}` },
+        unit_amount: Math.round(plan.price * 100),
+        recurring: { interval: "month" },
+      },
+      quantity: 1,
+    }],
+    success_url: `${origin}/portals/installer?tab=payments&membership=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url:  `${origin}/portals/installer?tab=payments&membership=cancelled`,
+    metadata,
+    subscription_data: { metadata, ...(trialDays ? { trial_period_days: trialDays } : {}) },
   });
 
   return ok({
-    installer: { plan: updated.plan, membershipMonthlyFee: updated.membershipMonthlyFee, revenueSharePct: updated.revenueSharePct, trialEndsAt: updated.trialEndsAt },
-    trialDays: plan.trial,
-    message: plan.trial
-      ? `Your ${data.plan} plan trial starts now — free for ${plan.trial} days, then $${plan.price}/month. Cancel any time before day ${plan.trial} and you won't be charged.`
-      : `Successfully upgraded to ${data.plan} plan. Revenue share is now ${Math.round(plan.shareRate * 100)}%.`,
+    checkoutUrl: session.url,
+    trialDays,
+    message: trialDays
+      ? `Start your ${trialDays}-day ${data.plan} trial. You won't be charged until it ends, and you can cancel any time before then.`
+      : `Continue to checkout to start ${data.plan} at $${plan.price}/month.`,
   });
 }

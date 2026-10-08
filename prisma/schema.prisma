@@ -201,7 +201,7 @@ model Installer {
   backgroundChecked  Boolean            @default(false)
   verificationStatus VerificationStatus @default(PENDING)
   plan               InstallerPlan      @default(FREE)
-  successFeeRate     Float              @default(0.05)
+  successFeeRate     Float              @default(0.10) // Free-tier lead success fee; set from lib/installer-plans.js on every plan change
   rating             Float              @default(0)
   reviewCount        Int                @default(0)
   jobsCompleted      Int                @default(0)
@@ -218,7 +218,7 @@ model Installer {
   revenueSharePct          Float   @default(0.15) // 15% Free, 25% Pro, 30% Enterprise
   lifetimeReferralEarnings Float   @default(0)
   monthlyReferralEarnings  Float   @default(0)
-  vppSharePct              Float   @default(0.05) // $5/event per referred home
+  vppSharePct              Float   @default(0) // installer share of VPP event revenue: Free 0% | Pro 5% | Enterprise 10%
 
   // Membership billing
   membershipMonthlyFee Float     @default(0) // 0 | 99 | 499
@@ -420,7 +420,7 @@ model Job {
   completedAt           DateTime?
   projectValue          Float
   successFee            Float
-  successFeeRate        Float     @default(0.08) // plan-tiered: Free=0.08, Pro=0.05, Enterprise=0.03; 0 for self-sourced jobs
+  successFeeRate        Float     @default(0.10) // plan-tiered lead success fee: Free 10% | Pro 7% | Enterprise 5%; 0 fee for self-sourced jobs
   status                JobStatus @default(SCHEDULED)
   jobType               String? // solar|battery|ev_charger|smart_panel|site_survey
   permitStatus          String    @default("not_started")

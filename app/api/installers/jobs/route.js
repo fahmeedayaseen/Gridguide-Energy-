@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getLeadSuccessFeeRate } from "@/lib/installer-plans.js";
 
 const createSchema = z.object({
   leadId:       z.string().optional(),
@@ -81,19 +82,8 @@ export async function POST(request) {
   const { data, error } = await parseBody(request, createSchema);
   if (error) return err("Validation failed", 400, error);
 
-  // Lead success fee is tiered by plan and admin-adjustable via PlatformConfig.
-  // Falls back to hardcoded defaults if config unavailable.
-  // Free: 10%  |  Pro: 7%  |  Enterprise: 5%
-  let feeRates = { FREE: 0.10, PRO: 0.07, ENTERPRISE: 0.05 };
-  try {
-    const { getPlatformConfig } = await import("@/lib/platform-config.js");
-    const cfg = await getPlatformConfig();
-    if (cfg.leadSuccessFeeFree     != null) feeRates.FREE       = cfg.leadSuccessFeeFree;
-    if (cfg.leadSuccessFeePro      != null) feeRates.PRO        = cfg.leadSuccessFeePro;
-    if (cfg.leadSuccessFeeEnterprise != null) feeRates.ENTERPRISE = cfg.leadSuccessFeeEnterprise;
-  } catch {}
-  const LEAD_SUCCESS_FEES = feeRates;
-  const successFeeRate = LEAD_SUCCESS_FEES[installer.plan] ?? 0.08;
+  // Lead success fee is tiered by plan and admin-adjustable (Free 10% | Pro 7% | Enterprise 5%).
+  const successFeeRate = await getLeadSuccessFeeRate(installer.plan);
 
   // Only apply the success fee to GridGuide-generated leads (not self-sourced jobs)
   const isGridGuideLead = !!data.leadId;

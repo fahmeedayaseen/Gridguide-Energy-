@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest, requireRole } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getLeadSuccessFeeRate } from "@/lib/installer-plans.js";
 
 const leadSchema = z.object({
   installerId:   z.string(),
@@ -50,7 +51,16 @@ export async function GET(request) {
     orderBy: { createdAt: "desc" },
   });
 
-  return ok({ leads });
+  // Free installers see the lead but not the homeowner's contact details or
+  // notes (a Pro feature). Redact here so the data never reaches the browser.
+  const redact = !isAdmin && installer?.plan === "FREE";
+  const out = redact
+    ? leads.map((l) => ({ ...l, customerEmail: null, customerPhone: null, notes: null,
+        customerName: (l.customerName || "").split(" ").map((w, i) => (i === 0 ? w : `${w[0] || ""}.`)).join(" "),
+        contactRedacted: true }))
+    : leads;
+
+  return ok({ leads: out });
 }
 
 // POST /api/installers/leads — admin or system creates a lead for an installer
@@ -69,13 +79,10 @@ export async function POST(request) {
     return err("Installer is not yet verified", 409);
   }
 
-  // Calculate success fee based on installer plan
-  const successFeeRates = {
-    BASIC: 0.09,  // midpoint of 8-10%
-    PRO:   0.06,  // midpoint of 5-7%
-    ENTERPRISE: 0.05,  // midpoint of 3-5%
-  };
-  const rate = successFeeRates[installer.plan] || 0.09;
+  // Success fee from the installer's plan (admin-configurable; 10% / 7% / 5%).
+  // Previously used a nonexistent BASIC plan key and 9/6/5% rates, so every
+  // Free installer was billed 9% instead of 10%.
+  const rate = await getLeadSuccessFeeRate(installer.plan);
   const successFee = data.estimatedValue ? data.estimatedValue * rate : null;
 
   const lead = await prisma.installerLead.create({
@@ -123,19 +130,27 @@ export async function PATCH(request) {
     data,
   });
 
-  // If converted, create a job record
+  // If converted, create the job once. Job.leadId is unique, so converting a
+  // lead that already has a job (e.g. from an accepted proposal, or a second
+  // CONVERTED update) used to throw and return a 500.
   if (data.status === "CONVERTED") {
-    await prisma.job.create({
-      data: {
-        installerId:  lead.installerId,
-        leadId:       lead.id,
-        title:        `${lead.projectType} — ${lead.customerName}`,
-        address:      lead.address,
-        projectValue: lead.estimatedValue || 0,
-        successFee:   lead.successFee || 0,
-        status:       "SCHEDULED",
-      },
-    });
+    const existingJob = await prisma.job.findUnique({ where: { leadId: lead.id } });
+    if (!existingJob) {
+      const projectValue   = updated.estimatedValue || 0;
+      const successFeeRate = await getLeadSuccessFeeRate(lead.installer.plan);
+      await prisma.job.create({
+        data: {
+          installerId:  lead.installerId,
+          leadId:       lead.id,
+          title:        `${lead.projectType} — ${lead.customerName}`,
+          address:      lead.address,
+          projectValue,
+          successFee:   projectValue * successFeeRate,
+          successFeeRate,
+          status:       "SCHEDULED",
+        },
+      });
+    }
   }
 
   return ok({ lead: updated });

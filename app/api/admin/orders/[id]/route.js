@@ -85,13 +85,20 @@ export async function PATCH(request, { params }) {
 
   // Refund flow
   if (data.status === "REFUNDED") {
-    if (!order.stripePaymentIntentId) return err("No payment intent — cannot refund", 400);
+    // The Order model stores the PaymentIntent as `stripePaymentId` (written by
+    // the checkout webhook). The old `stripePaymentIntentId` field never
+    // existed, so every refund on a real paid order was blocked.
+    if (!order.stripePaymentId) return err("No payment on record — cannot refund", 400);
+    if (data.refundAmount != null && data.refundAmount > order.total) {
+      return err(`Refund amount ($${data.refundAmount.toFixed(2)}) exceeds the order total ($${order.total.toFixed(2)})`, 400);
+    }
+    // REFUNDED is terminal in VALID_TRANSITIONS, so a second refund can't stack on the first.
     const amountCents = data.refundAmount
       ? Math.round(data.refundAmount * 100)
       : Math.round(order.total * 100);
     try {
       await stripe.refunds.create({
-        payment_intent: order.stripePaymentIntentId,
+        payment_intent: order.stripePaymentId,
         amount: amountCents,
         reason: "requested_by_customer",
       });
@@ -107,17 +114,20 @@ export async function PATCH(request, { params }) {
     data: updateData,
   });
 
-  // Audit log
+  // Audit log — field names must match the PlatformAuditLog model (the old
+  // entityType/entityId/adminId/before/after fields don't exist, so every
+  // write threw and was swallowed: no admin order action was ever logged).
   await prisma.platformAuditLog.create({
     data: {
-      action:    `ORDER_${data.status || "UPDATE"}`,
-      entityType:"Order",
-      entityId:  order.id,
-      adminId:   auth.user.id,
-      before:    JSON.stringify({ status: order.status }),
-      after:     JSON.stringify(updateData),
+      actorUserId: auth.user.id,
+      actorRole:   "ADMIN",
+      action:      `ORDER_${data.status || "UPDATE"}`,
+      targetType:  "Order",
+      targetId:    order.id,
+      category:    data.status === "REFUNDED" ? "BILLING" : "OTHER",
+      metadata:    { before: { status: order.status }, after: updateData },
     },
-  }).catch(() => {});
+  }).catch((e) => console.error("[admin/orders] audit log failed:", e.message));
 
   return ok({ order: updated, message: `Order updated` });
 }

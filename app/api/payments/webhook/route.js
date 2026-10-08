@@ -12,6 +12,11 @@ import { getPlatformConfig }    from "@/lib/platform-config.js";
 import { calculateAndRecordCommission } from "@/lib/installer-commission.js";
 import { sendOrderConfirmation } from "@/lib/email.js";
 import { awardHomeownerReferralCredits } from "@/lib/credits.js";
+import { syncInstallerSubscription, downgradeInstallerForFailedPayment } from "@/lib/installer-billing.js";
+
+// Statuses that keep a paid homeowner plan. Anything else (past_due, unpaid,
+// incomplete, incomplete_expired, canceled, paused) falls back to Free.
+const HOMEOWNER_PAID_STATUSES = new Set(["active", "trialing"]);
 
 // Maps a Stripe price ID to the homeowner-facing plan. Sourced from
 // lib/stripe.js's PRICES (the same map used to CREATE checkout sessions in
@@ -49,8 +54,28 @@ export async function POST(request) {
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const sub     = event.data.object;
+
+      // Installer memberships have their own lifecycle — never run them
+      // through the homeowner logic below (which used to upgrade the
+      // installer's *user* to HOMEOWNER_PLUS for any unknown price).
+      if (sub.metadata?.type === "installer_membership") {
+        await syncInstallerSubscription(sub);
+        break;
+      }
+      if (await prisma.installer.findFirst({ where: { stripeSubscriptionId: sub.id }, select: { id: true } })) {
+        await syncInstallerSubscription(sub);
+        break;
+      }
+
       const priceId = sub.items.data[0]?.price?.id;
-      const plan    = HOMEOWNER_PLAN_BY_PRICE[priceId] || "HOMEOWNER_PLUS";
+      const mapped  = HOMEOWNER_PLAN_BY_PRICE[priceId];
+      if (!mapped) {
+        // Unknown price: don't guess a plan (previously defaulted to PLUS).
+        console.warn(`[Webhook] Subscription ${sub.id} has unmapped price ${priceId}; skipping plan change.`);
+        break;
+      }
+      // Paid access only while Stripe says the subscription is active/trialing.
+      const plan = HOMEOWNER_PAID_STATUSES.has(sub.status) ? mapped : "HOMEOWNER_FREE";
 
       const user = await prisma.user.findFirst({
         where:  { stripeCustomerId: sub.customer },
@@ -194,6 +219,11 @@ export async function POST(request) {
     // ── Subscription cancelled ───────────────────────────────────────────────
     case "customer.subscription.deleted": {
       const sub  = event.data.object;
+      if (sub.metadata?.type === "installer_membership" ||
+          await prisma.installer.findFirst({ where: { stripeSubscriptionId: sub.id }, select: { id: true } })) {
+        await syncInstallerSubscription(sub);
+        break;
+      }
       const user = await prisma.user.findFirst({ where: { stripeCustomerId: sub.customer } });
       if (!user) break;
 
@@ -271,6 +301,30 @@ export async function POST(request) {
     //    decremented, and no confirmation is sent. ──────────────────────────
     case "checkout.session.completed": {
       const session = event.data.object;
+
+      // Installer membership checkout: verify the real subscription status
+      // with Stripe before granting anything (a completed session alone does
+      // not mean the subscription is active — e.g. async payment methods).
+      if (session.metadata?.type === "installer_membership") {
+        if (!session.subscription) break;
+        const sub = await stripe.subscriptions.retrieve(
+          typeof session.subscription === "string" ? session.subscription : session.subscription.id
+        );
+        const res = await syncInstallerSubscription(sub, {
+          installerId:  session.metadata.installerId,
+          plan:         session.metadata.plan,
+          fromCheckout: true,
+        });
+        if (res?.paid) {
+          const inst = await prisma.installer.findUnique({ where: { id: res.installerId }, select: { userId: true } });
+          if (inst) await prisma.notification.create({
+            data: { userId: inst.userId, type: "MEMBERSHIP_ACTIVATED", title: `${res.plan} plan active`,
+                    message: sub.status === "trialing" ? `Your ${res.plan} trial has started.` : `Your ${res.plan} membership is active.` },
+          }).catch(() => {});
+        }
+        break;
+      }
+
       const orderId = session.metadata?.orderId;
       if (!orderId) break; // not a marketplace checkout (e.g. a different flow using Stripe Checkout)
 
@@ -344,6 +398,16 @@ export async function POST(request) {
         },
       }).catch(() => {});
 
+      break;
+    }
+
+    // ── Failed payment — installer memberships lose paid access immediately ──
+    case "invoice.payment_failed": {
+      const invoice = event.data.object;
+      const subId   = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      await downgradeInstallerForFailedPayment(subId);
+      // Homeowner subscriptions move to past_due and are downgraded by the
+      // customer.subscription.updated event that Stripe sends alongside this.
       break;
     }
   }
