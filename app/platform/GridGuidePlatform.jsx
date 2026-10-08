@@ -16837,6 +16837,56 @@ function AdminMemberships(){
   );
 };
 
+// Real VPP provider controls (status / public visibility / enrollment) backed
+// by GET /api/vpp/providers and PATCH /api/vpp/providers/[id]. Replaces the
+// cosmetic local-only EnergyHub "on" toggle.
+function VppProviderControls(){
+  const T=T_A;
+  const [state,setState]=useState({providers:[],energyHubEnabled:false,loading:true,error:""});
+  const [busy,setBusy]=useState("");
+  const [msg,setMsg]=useState("");
+  const load=useCallback(()=>{
+    fetch("/api/vpp/providers",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not load providers");return d;})
+      .then(d=>setState({providers:d.providers||[],energyHubEnabled:!!d.energyHubEnabled,loading:false,error:""}))
+      .catch(e=>setState(st=>({...st,loading:false,error:e.message})));
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const patch=async(p,data)=>{
+    setBusy(p.id);setMsg("");
+    try{
+      const r=await fetch(`/api/vpp/providers/${p.id}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Update failed");
+      setMsg(d.warning||`${p.name} updated.`);load();
+    }catch(e){setMsg(e.message);}
+    setBusy("");
+  };
+  return(
+    <div style={{background:T.card,border:`1px solid ${T.bord}`,borderRadius:14,padding:"16px 18px",marginBottom:18}}>
+      <div style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>VPP Provider Controls</div>
+      <div style={{fontSize:10,color:T.muted,marginBottom:12}}>Live switches for which VPP partners homeowners can see and enroll with. EnergyHub also requires ENERGYHUB_ENABLED=true ({state.energyHubEnabled?"set":"not set"}).</div>
+      {state.loading&&<div style={{fontSize:11,color:T.muted}}>Loading…</div>}
+      {state.error&&<div style={{fontSize:11,color:SH.red}}>{state.error}</div>}
+      {msg&&<div style={{fontSize:11,color:SH.teal,marginBottom:8}}>{msg}</div>}
+      {!state.loading&&!state.error&&state.providers.length===0&&<div style={{fontSize:11,color:T.muted}}>No VPP providers configured yet.</div>}
+      {state.providers.map(p=>(
+        <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 0",borderTop:`1px solid ${T.bord}22`}}>
+          <div style={{flex:1,minWidth:140}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.text}}>{p.name}</div>
+            <div style={{fontSize:10,color:T.muted}}>{p.configured?"API key set":"No API key"} · {p.acceptingEnrollment?"accepting enrollments":p.publiclyVisible?"visible, enrollment closed":"hidden"}</div>
+          </div>
+          <select value={p.status} disabled={busy===p.id} onChange={e=>patch(p,{status:e.target.value})} style={{background:T.surf,border:`1px solid ${T.bord}`,borderRadius:8,padding:"5px 8px",fontSize:10,color:T.text}}>
+            {["ACTIVE","SANDBOX","PENDING_CREDENTIALS","PAUSED","ERROR"].map(o=><option key={o} value={o}>{o}</option>)}
+          </select>
+          <Tog on={!!p.publicVisible} onChange={v=>patch(p,{publicVisible:v})} label="Visible" T={T}/>
+          <Tog on={!!p.enrollmentOpen} onChange={v=>patch(p,{enrollmentOpen:v})} label="Enrollment open" T={T}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AdminIntegrations(){
   const {isMobile,isTablet}=useBP();
   const T=T_A;
@@ -16845,7 +16895,7 @@ function AdminIntegrations(){
     {id:"utilityapi",name:"UtilityAPI",sub:"Utility bill & meter data · Green Button",cat:"Utility Data",color:SH.teal,icon:"activity",docs:"https://utilityapi.com/docs",env:"UTILITYAPI_KEY",on:true,warning:false},
     {id:"derapi",name:"Derapi",sub:"Normalized DER layer · All home energy devices",cat:"Devices",color:SH.purple,icon:"plug",docs:"https://derapi.com/docs",env:"DERAPI_KEY",on:true,warning:false},
     {id:"stripe",name:"Stripe",sub:"Payments · Subscriptions · Payouts",cat:"Payments",color:SH.purple,icon:"credit",docs:"https://stripe.com/docs",env:"STRIPE_SECRET_KEY",on:true,warning:true},
-    {id:"energyhub",name:"EnergyHub",sub:"VPP dispatch · Demand response",cat:"VPP",color:SH.green,icon:"zap",docs:"https://energyhub.com/developers",env:"ENERGYHUB_API_KEY",on:true,warning:false},
+    {id:"energyhub",name:"EnergyHub",sub:"VPP dispatch · Demand response · Status is controlled in VPP Provider Controls above",cat:"VPP",color:SH.green,icon:"zap",docs:"https://energyhub.com/developers",env:"ENERGYHUB_API_KEY",on:false,warning:false},
     {id:"leap",name:"Leap",sub:"Demand response marketplace",cat:"VPP",color:SH.green,icon:"trending",docs:"https://leap.ac/docs",env:"LEAP_API_KEY",on:false,warning:false},
     {id:"mapbox",name:"Mapbox",sub:"Maps · Installer coverage · Territories",cat:"Maps",color:SH.blue,icon:"map",docs:"https://docs.mapbox.com",env:"NEXT_PUBLIC_MAPBOX_TOKEN",on:true,warning:false},
     {id:"anthropic",name:"Anthropic (Claude)",sub:"AI Energy Assistant · Backend only",cat:"AI",color:SH.orange,icon:"cpu",docs:"https://docs.anthropic.com",env:"ANTHROPIC_API_KEY",on:true,warning:true},
@@ -16915,6 +16965,7 @@ function AdminIntegrations(){
 
   return(
     <div>
+      <VppProviderControls/>
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:10}}>
         <div>

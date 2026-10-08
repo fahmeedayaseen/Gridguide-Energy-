@@ -3,6 +3,7 @@ import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest, requireRole } from "@/lib/jwt.js";
 import { routeVppProgram } from "@/lib/vpp-partners.js";
 import { z } from "zod";
+import { getPublicVppEarningsDisplay, VPP_EARNINGS_DISCLAIMER } from "@/lib/vpp/earnings-estimates.js";
 
 const programSchema = z.object({
   providerKey: z.string().min(2).transform(v => v.toLowerCase()),
@@ -31,7 +32,26 @@ export async function GET(request) {
   const utility = searchParams.get("utility") || undefined;
   const deviceTypes = (searchParams.get("deviceTypes") || "").split(",").filter(Boolean);
   const routed = await routeVppProgram({ prisma, userId: auth.user.id, state, utility, deviceTypes });
-  return ok({ programs: routed.eligible, recommended: routed.recommended, activeEnrollment: routed.activeEnrollment, conflict: routed.conflict });
+
+  // Homeowner-safe shape: no internal provider fields, and no unverified
+  // admin-typed rate fields (estimatedRateKwh/Kw are never used in settlement
+  // and must not be shown as earnings). Dollar figures only come from
+  // verified, in-window VppProgramEarningsEstimate rows.
+  const ids = routed.eligible.map(p => p.id);
+  const estimates = ids.length ? await prisma.vppProgramEarningsEstimate.findMany({ where: { programId: { in: ids } } }) : [];
+  const shape = (p) => p && ({
+    id: p.id, name: p.name, market: p.market, state: p.state, utility: p.utility,
+    programType: p.programType, deviceTypes: p.deviceTypes, status: p.status,
+    provider: p.provider ? { id: p.provider.id, key: p.provider.key, name: p.provider.name } : null,
+    earnings: getPublicVppEarningsDisplay(estimates.filter(e => e.programId === p.id)),
+  });
+  return ok({
+    programs: routed.eligible.map(shape),
+    recommended: shape(routed.recommended),
+    activeEnrollment: routed.activeEnrollment,
+    conflict: routed.conflict,
+    disclaimer: VPP_EARNINGS_DISCLAIMER,
+  });
 }
 
 export async function POST(request) {

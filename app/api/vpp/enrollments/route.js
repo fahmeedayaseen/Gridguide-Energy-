@@ -3,6 +3,7 @@ import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { routeVppProgram, sendPartnerEnrollment } from "@/lib/vpp-partners.js";
 import { z } from "zod";
+import { canProviderAcceptEnrollment, enrollmentBlockReason } from "@/lib/vpp/provider-controls.js";
 
 const enrollSchema = z.object({
   programId: z.string().optional(),
@@ -33,6 +34,13 @@ export async function POST(request) {
   if (active) return err("This homeowner is already enrolled or pending in a VPP program. Duplicate conflicting enrollment is blocked.", 409, { activeEnrollment: active });
 
   let program = data.programId ? await prisma.vppGridProgram.findUnique({ where: { id: data.programId }, include: { provider: true } }) : null;
+  // A homeowner-selected program must be ACTIVE and its provider visible and
+  // open for enrollment (admin controls + EnergyHub gate). Auto-routing below
+  // already applies the same filter.
+  if (program) {
+    if (program.status !== "ACTIVE") return err("This program isn't accepting enrollments right now.", 409);
+    if (!canProviderAcceptEnrollment(program.provider)) return err(enrollmentBlockReason(program.provider), 409);
+  }
   let routeReason = "Program selected by homeowner/admin.";
   if (!program) {
     const routed = await routeVppProgram({ prisma, userId: auth.user.id, state: data.state, utility: data.utility, deviceTypes: data.deviceTypes || [] });
@@ -57,7 +65,14 @@ export async function POST(request) {
     }
   }
 
-  const enrollment = await prisma.vppProgramEnrollment.create({ data: { userId: auth.user.id, providerId: program.providerId, programId: program.id, externalEnrollmentId, status, consentVersion: data.consentVersion, consentAcceptedAt: new Date(), utilityAccountId: data.utilityAccountId, deviceIds: data.deviceIds || [], routeReason, syncError } });
+  // Re-enrolling in a program the homeowner previously left reuses the row
+  // (userId+programId is unique, so a plain create used to throw a 500).
+  const fields = { providerId: program.providerId, externalEnrollmentId, status, consentVersion: data.consentVersion, consentAcceptedAt: new Date(), utilityAccountId: data.utilityAccountId, deviceIds: data.deviceIds || [], routeReason, syncError };
+  const enrollment = await prisma.vppProgramEnrollment.upsert({
+    where:  { userId_programId: { userId: auth.user.id, programId: program.id } },
+    update: { ...fields, enrolledAt: new Date() },
+    create: { userId: auth.user.id, programId: program.id, ...fields },
+  });
   return ok({ enrollment, provider: program.provider, program, message: syncError ? "Enrollment saved locally. Add partner API credentials to submit live enrollment." : "VPP enrollment submitted." }, 201);
 }
 
@@ -88,10 +103,37 @@ export async function DELETE(request) {
     return err("No active VPP enrollment found to opt out of.", 404);
   }
 
+  if (["CANCELLED", "CANCELLATION_PENDING"].includes(enrollment.status)) {
+    return err("This enrollment has already been cancelled.", 409);
+  }
+
+  // If the partner never received this enrollment (no external ID), it can be
+  // cancelled outright. If it did, the partner must be told: no partner
+  // cancel-enrollment API is implemented yet (no partner contract), so the
+  // enrollment is marked CANCELLATION_PENDING instead of pretending the
+  // partner was notified. Admin follow-up moves it to CANCELLED, or to
+  // CANCELLATION_FAILED if the partner rejects it.
+  const reason = data?.reason ? `Opted out: ${data.reason}` : "Opted out by homeowner.";
+  const needsPartner = !!enrollment.externalEnrollmentId;
   const updated = await prisma.vppProgramEnrollment.update({
     where: { id: enrollment.id },
-    data: { status: "CANCELLED", syncError: data?.reason ? `Opted out: ${data.reason}` : "Opted out by homeowner." },
+    data: {
+      status:    needsPartner ? "CANCELLATION_PENDING" : "CANCELLED",
+      syncError: needsPartner ? `${reason} Awaiting partner cancellation.` : reason,
+    },
   });
 
-  return ok({ enrollment: updated, message: "You have opted out of this VPP program. You can re-enroll at any time." });
+  // Skip any upcoming events they were invited to.
+  await prisma.vppEventParticipation.updateMany({
+    where: { enrollmentId: enrollment.id, status: { in: ["INVITED", "OPTED_IN"] }, event: { windowStart: { gt: new Date() } } },
+    data:  { status: "OPTED_OUT" },
+  }).catch(() => {});
+
+  return ok({
+    enrollment: updated,
+    partnerNotified: false,
+    message: needsPartner
+      ? "Your opt-out is recorded. We're confirming the cancellation with your VPP partner; you won't be included in new events."
+      : "You have opted out of this VPP program. You can re-enroll at any time.",
+  });
 }

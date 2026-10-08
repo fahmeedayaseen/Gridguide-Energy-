@@ -93,6 +93,7 @@ const PUBLIC_ROUTES = [
   // Without these entries the middleware returned 401 before the handler ran,
   // so invitees and homeowners hit a dead page.
   { path: "/api/public/proposals", methods: ["GET"], matchChildren: true },
+  { path: "/api/public/vpp/providers", methods: ["GET"] },
   { path: "/api/partner-invitations", methods: ["GET"], matchChildren: true },
 ];
 

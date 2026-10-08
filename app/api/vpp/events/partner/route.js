@@ -45,8 +45,12 @@ export async function GET(request) {
   const enrollments = await prisma.vppProgramEnrollment.findMany({ where: { userId: auth.user.id, status: { in: ["ACTIVE","PENDING_PROVIDER"] } }, select: { programId: true, providerId: true } });
   const programIds = enrollments.map(e => e.programId);
   const providerIds = enrollments.map(e => e.providerId);
+  // An event tied to a program is shown only to that program's enrollees.
+  // Provider-wide events (no programId) go to anyone enrolled with that
+  // provider. Previously any event from the same provider matched, so a
+  // Program B event appeared for Program A enrollees.
   const events = await prisma.vppPartnerEvent.findMany({
-    where: { ...(status && { status }), OR: [{ programId: { in: programIds } }, { providerId: { in: providerIds } }], windowEnd: { gte: now } },
+    where: { ...(status && { status }), OR: [{ programId: { in: programIds } }, { programId: null, providerId: { in: providerIds } }], windowEnd: { gte: now } },
     orderBy: { windowStart: "asc" },
     include: { provider: true, program: true },
     take: 50,
@@ -66,5 +70,22 @@ export async function POST(request) {
     eventType: data.eventType || "DEMAND_RESPONSE", market: data.market, utility: data.utility, state: data.state,
     windowStart: new Date(data.windowStart), windowEnd: new Date(data.windowEnd), targetKw: data.targetKw, grossRevenue: data.grossRevenue || 0, metadata: data.metadata,
   }});
-  return ok({ event, message: "Partner VPP event created." }, 201);
+  // Invite every active enrollee of the event's program. VppEventParticipation
+  // existed in the schema but was never created anywhere, so per-home
+  // participation, opt-outs and performance had nowhere to live.
+  let invited = 0;
+  if (event.programId) {
+    const enrollees = await prisma.vppProgramEnrollment.findMany({
+      where: { programId: event.programId, status: "ACTIVE" },
+      select: { id: true, userId: true },
+    });
+    if (enrollees.length) {
+      const res = await prisma.vppEventParticipation.createMany({
+        data: enrollees.map(e => ({ eventId: event.id, enrollmentId: e.id, userId: e.userId, status: "INVITED" })),
+        skipDuplicates: true,
+      });
+      invited = res.count;
+    }
+  }
+  return ok({ event, invited, message: `Partner VPP event created.${invited ? ` ${invited} enrolled home(s) invited.` : ""}` }, 201);
 }

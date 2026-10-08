@@ -1986,6 +1986,8 @@ model VppProvider {
   webhookSecretRef String?
   supportsOAuth    Boolean           @default(false)
   supportsWebhook  Boolean           @default(true)
+  publicVisible    Boolean           @default(false) // admin: may appear to homeowners/public
+  enrollmentOpen   Boolean           @default(false) // admin: homeowners may enroll now
   contactEmail     String?
   notes            String?
   metadata         Json?
@@ -2032,6 +2034,7 @@ model VppGridProgram {
   provider    VppProvider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
   enrollments VppProgramEnrollment[]
   events      VppPartnerEvent[]
+  earningsEstimates VppProgramEarningsEstimate[]
 
   @@index([providerId])
   @@index([state, utility])
@@ -2093,6 +2096,33 @@ enum VppEnrollmentStatus {
   PAUSED
   CANCELLED
   NEEDS_REAUTH
+  CANCELLATION_PENDING // opted out locally; partner not yet confirmed
+  CANCELLATION_FAILED  // partner rejected/failed the cancellation; needs follow-up
+}
+
+/// Admin-published, source-verified earnings estimate for a VPP program.
+/// The ONLY source of VPP dollar figures shown to homeowners or the public.
+model VppProgramEarningsEstimate {
+  id             String    @id @default(cuid())
+  programId      String
+  lowAmount      Float
+  highAmount     Float
+  period         String    // per_event | per_month | per_season | per_year
+  deviceType     String?   // BATTERY | EV_CHARGER | THERMOSTAT | SOLAR_INVERTER
+  sourceVerified Boolean   @default(false)
+  sourceName     String
+  sourceUrl      String?
+  notes          String?
+  validFrom      DateTime  @default(now())
+  validTo        DateTime?
+  publishedById  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  program VppGridProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+  @@map("vpp_program_earnings_estimates")
 }
 
 model VppPartnerEvent {
@@ -2221,6 +2251,7 @@ model VppProviderWebhook {
 
   provider VppProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
+  @@unique([providerId, externalId]) // partner retries are recorded once (NULL externalIds are not deduped)
   @@index([providerId])
   @@index([eventType])
   @@index([processed])
