@@ -2256,6 +2256,10 @@ model PlatformConfig {
   leadSuccessFeeFree         Float @default(0.10) // 10% — Free plan
   leadSuccessFeePro          Float @default(0.07) // 7%  — Pro plan
   leadSuccessFeeEnterprise   Float @default(0.05) // 5%  — Enterprise plan
+
+  // Installer VPP projection — an ASSUMPTION used only for the "projected per
+  // event" figure on the installer VPP earnings view. Never used in settlement.
+  vppProjectedPerEventRate   Float @default(5) // $ per enrolled referred home per event
   // Donations are sourced from the cash wallet (VPP earnings), NOT Credits.
   // The homeowner earns gridFundDonationBonusPct of the donated dollar value
   // back as GridGuide Credits (converted at creditsPerDollar).

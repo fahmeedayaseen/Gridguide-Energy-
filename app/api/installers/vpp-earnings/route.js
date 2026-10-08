@@ -4,6 +4,7 @@
 import { prisma } from "@/lib/db.js";
 import { ok, err } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
+import { getPlatformConfig } from "@/lib/platform-config.js";
 
 export async function GET(request) {
   const auth = await authenticateRequest(request);
@@ -37,6 +38,9 @@ export async function GET(request) {
     },
   });
 
+  let perEventRate = 5;
+  try { const cfg = await getPlatformConfig(); if (typeof cfg.vppProjectedPerEventRate === "number") perEventRate = cfg.vppProjectedPerEventRate; } catch {}
+
   return ok({
     earnings,
     totals: {
@@ -45,6 +49,15 @@ export async function GET(request) {
       totalParticipating: totals._sum.participatingHomes || 0,
     },
     vppEligibleHomes: vppEnrolledReferrals,
-    projectedPerEvent: vppEnrolledReferrals * 5, // $5 per home per event
+    // A projection, not earnings: enrolled homes × an admin-set per-event
+    // assumption (PlatformConfig.vppProjectedPerEventRate). Real amounts are
+    // in `totals`, which come from settled events.
+    projection: {
+      perEvent:        vppEnrolledReferrals * perEventRate,
+      ratePerHome:     perEventRate,
+      isAssumption:    true,
+      note:            "Projection based on an assumed per-home rate. Actual earnings depend on settled events.",
+    },
+    projectedPerEvent: vppEnrolledReferrals * perEventRate, // kept for existing callers
   });
 }

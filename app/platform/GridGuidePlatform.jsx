@@ -1890,7 +1890,7 @@ function EnergyBlog({nav}) {
   const BLOG_CONTENT = {
     "How to Maximize Solar Production in Winter": "Solar panels lose efficiency in winter — but not as much as people think. The key factors are angle, temperature, and shading. Cold temperatures actually improve panel efficiency by up to 10%. The bigger issue is low sun angle and shorter days. To maximize winter production: tilt your panels steeper (add 10–15° from your summer angle if adjustable), trim trees on the south side, keep panels clear of snow within 24 hours of a storm, and let GridGuide help you plan your battery charging window around the 10am–2pm peak window when winter sun is highest. Users who implement all four strategies see an average 22% improvement in winter production vs. those who don't.",
     "Powerwall vs. Enphase IQ Battery: Which Is Right for Your Home?": "Both are excellent batteries — the right choice depends on your setup. Tesla Powerwall 3 (13.5 kWh, $9,200): Best for larger homes, integrates tightly with Tesla Solar, has a built-in inverter, and is natively supported by GridGuide's VPP partner integrations. Enphase IQ Battery 5P (5 kWh per unit, stackable): Best for homes with Enphase microinverters already installed, modular sizing is excellent for smaller budgets, and the Enphase Ensemble system provides whole-home backup with multiple units. GridGuide integrates with both through Derapi — VPP earnings are comparable at ~$800–$1,200/yr per 10 kWh of usable capacity. The Powerwall wins on single-unit simplicity; Enphase wins on modularity and existing Enphase solar compatibility.",
-    "How Virtual Power Plants Work — and How You Can Get Paid": "A Virtual Power Plant (VPP) is a network of home batteries, EVs, and flexible loads that a utility can call on during peak demand — instead of firing up a peaker plant. GridGuide partners with VPP operators like Leap and Enel to enroll your eligible devices in a program run by that partner; when the grid needs help, the partner's platform calls the event and your enrollment determines whether your battery discharges or your EV charging pauses. You get paid for the kWh you provide. The math: a typical Powerwall 3 earns $35–$80 per event, 8–15 events per year, for $500–$1,200 annually. GridGuide may retain a platform service share from VPP settlements — exact payout details are shown during enrollment and inside your account. Payouts land in your GridGuide cash wallet, withdrawable via direct deposit, within a few business days of the partner reporting settlement.",
+    "How Virtual Power Plants Work — and How You Can Get Paid": "A Virtual Power Plant (VPP) is a network of home batteries, EVs, and flexible loads that a utility can call on during peak demand — instead of firing up a peaker plant. GridGuide partners with VPP operators like Leap and Enel to enroll your eligible devices in a program run by that partner; when the grid needs help, the partner's platform calls the event and your enrollment determines whether your battery discharges or your EV charging pauses. You may be paid for the energy your devices provide. How much depends entirely on the program: incentive rates, how many events are called each year, and your device's performance all vary by utility and market, so there's no typical figure we can promise. GridGuide may retain a platform service share from VPP settlements — exact payout details are shown during enrollment and inside your account. Payouts land in your GridGuide cash wallet, withdrawable via direct deposit, within a few business days of the partner reporting settlement.",
     "The Best Time to Charge Your EV (Based on Your Utility Tariff)": "For PG&E EV-B: charge between 11pm–7am (off-peak at $0.14/kWh vs. $0.52 peak). For SDG&E DR-EV: midnight–6am is cheapest. For SCE TOU-D-PRIME: 9pm–12pm is off-peak at $0.13/kWh. GridGuide reads your actual tariff and helps you set an EV charging schedule around it. The average savings vs. charging whenever convenient: $340/year on a 40 kWh EV driven 12,000 miles annually. Pro tip: if you're VPP-enrolled through one of GridGuide's trusted VPP partners, keeping your EV at 60%+ charge before predicted VPP events gives you more capacity to earn from grid discharge.",
     "Every Solar Tax Credit Available in 2025 — Explained Simply": "Federal ITC (30%): deduct 30% of your total system cost from your federal tax bill. On a $25,000 system, that's $7,500. No income cap. Applies to solar, battery storage, EV chargers, and heat pumps installed at your primary residence. California SGIP: battery storage rebate of $150–$400/kWh depending on income tier and utility. A 13.5 kWh Powerwall can qualify for $2,025–$5,400. CA NEM 3.0: no longer a direct rebate, but understanding export rates affects your ROI calculation — GridGuide models this for you. Local utility rebates vary by provider — GridGuide's rebate finder pulls live data from DSIRE, your utility's portal, and manufacturer rebate programs.",
     "Ecobee vs. Nest: Which Thermostat Saves More When Paired with Solar?": "Both thermostats save energy — Ecobee saves ~26% on HVAC vs. a standard thermostat; Nest saves ~10–12%. The bigger question for solar homeowners is VPP compatibility and GridGuide integration. Ecobee: native GridGuide integration via Derapi, supports VPP pre-conditioning (pre-cool before events), room sensors improve accuracy, excellent API. Google Nest: Google SDM API is available but throttled, VPP pre-conditioning requires more manual setup, no room sensors on base model. For GridGuide users, Ecobee is the stronger choice — the pre-conditioning feature alone adds $15–$30/event in effective savings by reducing HVAC load during peak dispatch.",
@@ -1921,7 +1921,7 @@ function EnergyBlog({nav}) {
             <p style={{fontSize:15,color:"#B8C8E0",lineHeight:1.95}}>{BLOG_CONTENT[readPost.title]||"Full article coming soon."}</p>
             <div style={{marginTop:40,padding:"20px",background:C.navyCard,borderRadius:14,border:"1px solid "+C.navyBord}}>
               <div style={{fontFamily:"'Space Grotesk'",fontWeight:700,fontSize:13,marginBottom:6}}>Ready to optimize your home?</div>
-              <p style={{fontSize:12,color:C.muted,marginBottom:14}}>Connect your devices to GridGuide and start earning from your solar system.</p>
+              <p style={{fontSize:12,color:C.muted,marginBottom:14}}>Connect your devices to GridGuide to see what programs your solar system may be eligible for.</p>
               {nav&&<Btn variant="teal" onClick={()=>{setReadPost(null);nav("ai-signup");}}>Get Started Free<Icon name="arrow" size={13} color={C.navy}/></Btn>}
             </div>
           </div>
@@ -2885,14 +2885,13 @@ function EnergyPricing({nav}) {
             <Icon name="zap" size={28} color={C.purple}/>
           </div>
           <div style={{flex:1,minWidth:240}}>
-            <div style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:C.text,marginBottom:6}}>Plus pays for itself with VPP earnings</div>
+            <div style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:C.text,marginBottom:6}}>VPP participation on Plus</div>
             <p style={{fontSize:12,color:C.muted,lineHeight:1.7,marginBottom:0}}>
-              Eligible homeowners enrolled in VPP programs may earn incentives when their devices participate in grid events — deposited to their GridGuide Cash Wallet. Earnings vary by utility program, device, and market.
-              At $9.99/month for Plus, most members break even in month one — and earn more every month after.
+              Plus members with eligible devices can enroll in available VPP programs and may earn incentives when their devices participate in grid events, deposited to their GridGuide Cash Wallet. Earnings are not guaranteed and vary by utility program, device, location, and how many events are called.
             </p>
           </div>
           <button onClick={()=>nav("ai-signup")} style={{padding:"10px 22px",borderRadius:999,background:C.purple,color:"#fff",border:"none",fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0}}>
-            Start earning →
+            See available programs →
           </button>
         </div>
       </section>
@@ -3025,8 +3024,8 @@ function EnergyVPP({nav}) {
         <Card style={{padding:"28px 32px",background:`linear-gradient(135deg,${C.green}10,${C.teal}08)`,border:`1px solid ${C.green}30`}}>
           <div style={{display:"flex",gap:24,alignItems:"center",flexWrap:"wrap"}}>
             <div style={{flex:1}}>
-              <div style={{fontFamily:"'Space Grotesk'",fontSize:19,fontWeight:700,marginBottom:8}}>Avg. VPP earnings: <span style={{color:C.green}}>$45–$120/month</span></div>
-              <p style={{color:C.muted,fontSize:13}}>Based on a 13.5 kWh battery participating in 4–8 events per month, each lasting 2–4 hours.</p>
+              <div style={{fontFamily:"'Space Grotesk'",fontSize:19,fontWeight:700,marginBottom:8}}>VPP earnings depend on your program</div>
+              <p style={{color:C.muted,fontSize:13}}>Incentives vary by utility, program rules, device, and how many events are called. Any verified estimate for your area is shown during enrollment. Earnings are not guaranteed.</p>
             </div>
             <Btn size="lg" variant="teal" onClick={()=>nav("ai-signup")}>Join the Waitlist</Btn>
           </div>
@@ -5016,7 +5015,7 @@ function AIVPPPage({nav, user}) {
           When your utility or energy provider runs a Virtual Power Plant (VPP) event, GridGuide works with trusted VPP partners — including providers such as Leap and Enel, where available — to coordinate participation for eligible enrolled devices. If your solar system, battery, EV, or other qualifying device participates in an approved event, you may earn incentives based on your utility's program rules, event performance, and partner settlement. Earnings are deposited into your GridGuide Cash Wallet after the event has been processed and settled. No enrollment fee. No monthly fee.
         </p>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:40}}>
-          {[["$80","avg per event"],["4–6","events/month"],["Yours","to keep"],["Free","to enroll"]].map(([v,l])=>(
+          {[["Free","to enroll"],["No","monthly fee"],["Cash","wallet payouts"]].map(([v,l])=>(
             <div key={l} style={{background:AI.card,border:"1px solid "+AI.border,borderRadius:12,padding:"16px",textAlign:"center"}}>
               <div style={{fontFamily:"'Space Grotesk'",fontSize:23,fontWeight:800,color:C.teal}}>{v}</div>
               <div style={{fontSize:10,color:AI.muted,marginTop:3}}>{l}</div>
@@ -14027,15 +14026,10 @@ const INST_PLANS = {
   },
 };
 
-let INST_PORTFOLIO = [];
-
-const INST_SHARE_RATE = 0.25;
-const INST_VPP_PER_EVENT = 5;  // $5 per VPP home per event
 
 
-const INST_REVENUE_HISTORY = [];
 
-const INST_VPP_EVENTS = [];
+
 
 
 function ReferralToolButtons({plan,T,openModal}) {

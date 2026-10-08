@@ -18,6 +18,7 @@ const rateSchema = z.object({
   leadSuccessFeeFree:          z.number().min(0).max(1).optional(),
   leadSuccessFeePro:           z.number().min(0).max(1).optional(),
   leadSuccessFeeEnterprise:    z.number().min(0).max(1).optional(),
+  vppProjectedPerEventRate:    z.number().min(0).max(1000).optional(), // $ per home per event (assumption only)
   // Installer success fee by plan
   successFeeFree:              z.number().min(0).max(1).optional(),
   successFeePro:               z.number().min(0).max(1).optional(),
