@@ -14,6 +14,12 @@ const updateSchema = z.object({
   serviceAreas:      z.array(z.string()).optional(),
   specialties:       z.array(z.string()).optional(),
   territories:       z.array(z.string()).optional(),
+  notificationPrefs: z.object({
+    leads:    z.boolean(),
+    jobs:     z.boolean(),
+    reviews:  z.boolean(),
+    payments: z.boolean(),
+  }).strict().optional(),
 }).strict();
 
 export async function GET(request) {

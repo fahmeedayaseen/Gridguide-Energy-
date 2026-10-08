@@ -11,8 +11,16 @@ Found by type-checking `app/platform/GridGuidePlatform.jsx` for names that are u
 | Installer → Membership upgrade (`InstPayments`) | `openModal` undefined; upgrade button crashed | Removed the dead `openModal` branch; Stripe checkout path unchanged |
 | Installer and Enterprise → Referrals CSV import | `setMsg` undefined; invalid CSV crashed instead of showing an error | Added `msg` state and an error notice above the preview |
 
-## Not fixed (needs a decision)
-- **Installer → Jobs (`InstJobsDB`) crashes every time.** It renders the old built-in demo array `IDATA.jobs`, whose fields (`type`, `permitStatus`, `icStatus`) don't match what the screen reads (`job_type`, `permit_status`, `interconnection_status`). No front-end code calls a real jobs API. Needs wiring to a real endpoint.
-- **Installer → Settings → Save** sends `profile`, which is never defined. The intended payload is unclear (the screen only holds notification toggles).
-- **Enterprise login shows a reduced menu until reload.** `EntLogin` passes `data.user` without `enterpriseRole`, so the nav filters to Viewer-level items; `/api/users/me` on reload sets the role correctly.
+## Follow-up fixes (same day)
+| Screen | Problem | Fix |
+|---|---|---|
+| Installer → Jobs (`InstJobsDB`) | Crashed every time: rendered `IDATA.jobs` demo array with mismatched field names | Now loads real jobs from `GET /api/installers/jobs` (shared `useInstallerJobs` hook) with loading, error and empty states. "Mark Job Complete" PATCHes the job. GridGuide fee shows the job's stored `successFee`/`successFeeRate` (none for self-sourced jobs) instead of a hard-coded 5%. |
+| Installer → Schedule (`InstSchedule`) | Listed `IDATA.jobs` demo jobs | Shows real scheduled/in-progress jobs; Directions opens Google Maps; Mark Complete works. Removed the non-functional Notes button. |
+| Installer dashboard "Active Jobs" KPI | Counted `IDATA.jobs` | Counts real scheduled/in-progress jobs |
+| Installer → Settings → Save | Sent undefined `profile` to nonexistent `/api/installers/me` | Loads and saves via `/api/installers/profile`: notification toggles (new `Installer.notificationPrefs` JSON column, migration `20261007_installer_notification_prefs`) and real, editable service areas (replaced the hard-coded Austin list) |
+| Enterprise login | Reduced Viewer-level menu until reload | `EntLogin` now passes `enterpriseRole` from the login response's `enterpriseAccess.role` |
+
+Notes: notification preferences are now stored, but no email/alert sender reads them yet. The new migration has not been applied to a database.
+
+## Still not fixed
 - Several screens still show hard-coded sample figures (for example the admin dashboard totals and activity feed, the installer dashboard stats and "Pro Plan · 25% recurring commission" card, and the homeowner energy-flow diagram).

@@ -14298,43 +14298,95 @@ function InstInterconnection() {
   );
 };
 
+// Shared loader for the installer's real jobs (GET /api/installers/jobs).
+// Returns {jobs, stats, loading, error, reload}. No demo fallback: an empty
+// or failed response shows an empty/error state, never fabricated jobs.
+function useInstallerJobs(){
+  const [state,setState]=useState({jobs:[],stats:null,loading:true,error:""});
+  const load=useCallback(()=>{
+    setState(p=>({...p,loading:true,error:""}));
+    fetch("/api/installers/jobs",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d;})
+      .then(d=>setState({jobs:Array.isArray(d.jobs)?d.jobs:[],stats:d.stats||null,loading:false,error:""}))
+      .catch(e=>setState({jobs:[],stats:null,loading:false,error:e.message||"Could not load jobs"}));
+  },[]);
+  useEffect(()=>{load();},[load]);
+  return {...state,reload:load};
+}
+const jobStatusKey=s=>(s||"").toLowerCase();
+const humanize=s=>(s||"—").toString().replace(/_/g," ");
+const fmtJobDate=d=>d?new Date(d).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"Not scheduled";
+const jobCustomer=j=>j?.lead?.customerName||j?.title||"Customer";
+
 function InstJobsDB({setTab}) {
   const {isMobile} = usePBP();
-  const [selected, setSelected] = useState(null);
+  const {jobs,loading,error,reload}=useInstallerJobs();
+  const [selectedId, setSelectedId] = useState(null);
+  const [busy,setBusy]=useState(false);
+  const [actionErr,setActionErr]=useState("");
+  const selected=jobs.find(j=>j.id===selectedId)||null;
   const PERMIT_COLOR = {approved:SH.green, pending:SH.gold, not_started:T_I.dim, not_required:SH.teal};
   const IC_COLOR     = {approved:SH.green, pending:SH.gold, waiting:"#60A5FA", not_required:SH.teal, not_started:T_I.dim};
-  const STATUS_COLOR = {scheduled:SH.teal, completed:SH.green, review:SH.gold, cancelled:SH.red};
+  const STATUS_COLOR = {scheduled:SH.teal, in_progress:"#60A5FA", completed:SH.green, disputed:SH.gold, cancelled:SH.red};
+
+  const markComplete=async(job)=>{
+    setBusy(true);setActionErr("");
+    try{
+      const r=await fetch(`/api/installers/jobs?id=${encodeURIComponent(job.id)}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"COMPLETED",completedAt:new Date().toISOString()})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Could not update job");
+      reload();
+    }catch(e){setActionErr(e.message);}
+    setBusy(false);
+  };
+
+  const count=k=>jobs.filter(j=>jobStatusKey(j.status)===k).length;
 
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
         <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text}}>Jobs</h1>
         <div style={{display:"flex",gap:8}}>
-          <Badge color={SH.gold} dot>{IDATA.jobs.filter(j=>j.status==="scheduled").length} scheduled</Badge>
-          <Badge color={SH.green} dot>{IDATA.jobs.filter(j=>j.status==="completed").length} completed</Badge>
+          <Badge color={SH.gold} dot>{count("scheduled")} scheduled</Badge>
+          <Badge color={SH.green} dot>{count("completed")} completed</Badge>
         </div>
       </div>
 
+      {loading&&<div style={{fontSize:11,color:T_I.muted,padding:"20px 0"}}>Loading jobs…</div>}
+      {!loading&&error&&(
+        <div style={{background:`${SH.red}10`,border:`1px solid ${SH.red}30`,borderRadius:10,padding:"12px 14px",fontSize:11,color:SH.red,marginBottom:14}}>
+          {error} <button onClick={reload} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11,marginLeft:8}}>Retry</button>
+        </div>
+      )}
+      {!loading&&!error&&jobs.length===0&&(
+        <div style={{background:T_I.card,border:`1px solid ${T_I.bord}`,borderRadius:14,padding:24,textAlign:"center",fontSize:11,color:T_I.muted}}>
+          No jobs yet. Jobs appear here when a lead is won or you create one.
+        </div>
+      )}
+
+      {!loading&&jobs.length>0&&(
       <div style={{display:"grid",gridTemplateColumns:selected&&!isMobile?"1fr 360px":"1fr",gap:14}}>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {IDATA.jobs.map(job=>(
-            <div key={job.id} onClick={()=>setSelected(selected?.id===job.id?null:job)}
-              style={{background:T_I.card,border:`1.5px solid ${selected?.id===job.id?STATUS_COLOR[job.status]:T_I.bord}`,borderRadius:14,padding:16,cursor:"pointer",transition:"all .15s"}}>
+          {jobs.map(job=>{
+            const st=jobStatusKey(job.status);
+            return(
+            <div key={job.id} onClick={()=>setSelectedId(selectedId===job.id?null:job.id)}
+              style={{background:T_I.card,border:`1.5px solid ${selectedId===job.id?(STATUS_COLOR[st]||T_I.bord):T_I.bord}`,borderRadius:14,padding:16,cursor:"pointer",transition:"all .15s"}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:10}}>
                 <div>
-                  <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:T_I.text}}>{job.job_title}</div>
-                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{job.homeowner_name} · {job.scheduled_date}</div>
+                  <div style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:T_I.text}}>{job.title}</div>
+                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>{jobCustomer(job)} · {fmtJobDate(job.scheduledAt)}</div>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <span style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:SH.gold}}>${(job.contract_value||0).toLocaleString()}</span>
-                  <Badge color={STATUS_COLOR[job.status]}>{job.status}</Badge>
+                  <span style={{fontFamily:"'Space Grotesk'",fontSize:12,fontWeight:700,color:SH.gold}}>${(job.projectValue||0).toLocaleString()}</span>
+                  <Badge color={STATUS_COLOR[st]||T_I.dim}>{humanize(st)}</Badge>
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:8}}>
                 {[
-                  {l:"Job Type",       v:job.job_type.replace("_"," "),    c:T_I.muted},
-                  {l:"Permit",         v:job.permit_status.replace(/_/g," "),  c:PERMIT_COLOR[job.permit_status]},
-                  {l:"Interconnection",v:job.interconnection_status.replace(/_/g," "), c:IC_COLOR[job.interconnection_status]},
+                  {l:"Job Type",       v:humanize(job.jobType),               c:T_I.muted},
+                  {l:"Permit",         v:humanize(job.permitStatus),          c:PERMIT_COLOR[job.permitStatus]||T_I.muted},
+                  {l:"Interconnection",v:humanize(job.interconnectionStatus), c:IC_COLOR[job.interconnectionStatus]||T_I.muted},
                 ].map(s=>(
                   <div key={s.l} style={{background:T_I.hi,borderRadius:8,padding:"7px 9px"}}>
                     <div style={{fontSize:9,color:T_I.dim,marginBottom:3,textTransform:"uppercase",letterSpacing:".05em"}}>{s.l}</div>
@@ -14344,39 +14396,47 @@ function InstJobsDB({setTab}) {
               </div>
               {job.notes&&<div style={{fontSize:10,color:T_I.dim,marginTop:8,fontStyle:"italic"}}>{job.notes}</div>}
             </div>
-          ))}
+          );})}
         </div>
 
-        {selected&&(
-          <Card T={T_I} title={selected.homeowner_name}>
+        {selected&&(()=>{
+          const st=jobStatusKey(selected.status);
+          const fee=selected.successFee||0;
+          const rate=selected.successFeeRate||0;
+          const value=selected.projectValue||0;
+          return(
+          <Card T={T_I} title={jobCustomer(selected)}>
             <div style={{background:T_I.hi,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
               {[
-                ["Job",         selected.job_title],
-                ["Type",        selected.job_type.replace(/_/g," ")],
-                ["Scheduled",   selected.scheduled_date],
-                ["Status",      selected.status],
-                ["Contract",    `$${(selected.contract_value||0).toLocaleString()}`],
-                ["GridGuide fee","$"+(selected.contract_value*0.05).toLocaleString()+" (5%)"],
-                ["You receive", "$"+(selected.contract_value*0.95).toLocaleString()+" (95%)"],
-                ["Permit",      selected.permit_status.replace(/_/g," ")],
-                ["Interconnect",selected.interconnection_status.replace(/_/g," ")],
+                ["Job",         selected.title],
+                ["Type",        humanize(selected.jobType)],
+                ["Address",     selected.address||"—"],
+                ["Scheduled",   fmtJobDate(selected.scheduledAt)],
+                ["Status",      humanize(st)],
+                ["Contract",    `$${value.toLocaleString()}`],
+                ["GridGuide fee", fee>0?`$${fee.toLocaleString()} (${Math.round(rate*100)}%)`:"None (self-sourced job)"],
+                ["You receive", `$${(value-fee).toLocaleString()}`],
+                ["Permit",      humanize(selected.permitStatus)],
+                ["Interconnect",humanize(selected.interconnectionStatus)],
               ].map(([k,v])=>(
-                <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
+                <div key={k} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderBottom:`1px solid ${T_I.bord}22`,fontSize:11}}>
                   <span style={{color:T_I.muted}}>{k}</span>
-                  <span style={{color:T_I.text,fontWeight:500,textTransform:"capitalize"}}>{v}</span>
+                  <span style={{color:T_I.text,fontWeight:500,textTransform:"capitalize",textAlign:"right"}}>{v}</span>
                 </div>
               ))}
             </div>
             {selected.notes&&<div style={{padding:"9px",background:T_I.hi,borderRadius:8,fontSize:11,color:T_I.muted,lineHeight:1.6,marginBottom:14,fontStyle:"italic"}}>"{selected.notes}"</div>}
+            {actionErr&&<div style={{fontSize:11,color:SH.red,marginBottom:10}}>{actionErr}</div>}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {selected.status==="scheduled"&&<Btn T={T_I} full><Ic n="check" s={13} c="#0A0F1E"/>Mark Job Complete</Btn>}
+              {(st==="scheduled"||st==="in_progress")&&<Btn T={T_I} full disabled={busy} onClick={()=>markComplete(selected)}><Ic n="check" s={13} c="#0A0F1E"/>{busy?"Saving…":"Mark Job Complete"}</Btn>}
               <Btn T={T_I} v="outline" full onClick={()=>setTab("interconnection")}><Ic n="zap" s={13} c={T_I.muted}/>View Interconnection Tasks</Btn>
               <Btn T={T_I} v="outline" full onClick={()=>setTab("proposals")}><Ic n="file" s={13} c={T_I.muted}/>View Proposal</Btn>
-              <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:T_I.dim,fontSize:11,cursor:"pointer"}}>Close</button>
+              <button onClick={()=>setSelectedId(null)} style={{background:"none",border:"none",color:T_I.dim,fontSize:11,cursor:"pointer"}}>Close</button>
             </div>
           </Card>
-        )}
+        );})()}
       </div>
+      )}
     </div>
   );
 };
@@ -15000,6 +15060,18 @@ function InstReviews(){
 
 function InstSchedule(){
   const {isMobile,isTablet}=useBP();
+  const {jobs,loading,error,reload}=useInstallerJobs();
+  // Upcoming/active jobs first, ordered by scheduled date (API already sorts asc).
+  const schedJobs=jobs.filter(j=>["scheduled","in_progress"].includes(jobStatusKey(j.status)));
+  const [busyId,setBusyId]=useState(null);
+  const markComplete=async(j)=>{
+    setBusyId(j.id);
+    try{
+      const r=await fetch(`/api/installers/jobs?id=${encodeURIComponent(j.id)}`,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"COMPLETED",completedAt:new Date().toISOString()})});
+      if(r.ok) reload();
+    }catch{}
+    setBusyId(null);
+  };
   const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today=new Date().getDay();
   const weekDates=days.map((d,i)=>{
@@ -15027,31 +15099,33 @@ function InstSchedule(){
       </div>
       {/* Jobs */}
       <Card T={T_I}>
-        {IDATA.jobs.map(j=>(
+        {loading&&<div style={{fontSize:11,color:T_I.muted,padding:"14px 0"}}>Loading schedule…</div>}
+        {!loading&&error&&<div style={{fontSize:11,color:SH.red,padding:"14px 0"}}>{error} <button onClick={reload} style={{background:"none",border:"none",color:SH.teal,cursor:"pointer",fontSize:11}}>Retry</button></div>}
+        {!loading&&!error&&schedJobs.length===0&&<div style={{fontSize:11,color:T_I.muted,padding:"14px 0"}}>No upcoming jobs on your schedule.</div>}
+        {!loading&&schedJobs.map(j=>{
+          const st=jobStatusKey(j.status);
+          return(
           <div key={j.id} style={{display:"flex",gap:13,padding:"14px 0",borderBottom:`1px solid ${T_I.bord}22`,alignItems:"flex-start"}}>
-            <div style={{width:3,borderRadius:3,alignSelf:"stretch",background:j.status==="scheduled"?SH.teal:T_I.bord,flexShrink:0}}/>
+            <div style={{width:3,borderRadius:3,alignSelf:"stretch",background:st==="scheduled"?SH.teal:T_I.bord,flexShrink:0}}/>
             <div style={{flex:1}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div>
-                  <div style={{fontSize:12,fontWeight:600,color:T_I.text}}>{j.homeowner_name} · {(j.job_type||j.type)}</div>
-                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>📍 {j.address} · {j.id}</div>
-                  <div style={{fontSize:10,color:SH.gold,marginTop:4,fontWeight:500}}>📅 {(j.scheduled_date||j.date)}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:T_I.text}}>{jobCustomer(j)} · {humanize(j.jobType||j.title)}</div>
+                  <div style={{fontSize:10,color:T_I.muted,marginTop:2}}>📍 {j.address||"No address"}</div>
+                  <div style={{fontSize:10,color:SH.gold,marginTop:4,fontWeight:500}}>📅 {fmtJobDate(j.scheduledAt)}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:SH.teal}}>${(j.contract_value||0).toLocaleString()}</div>
-                  <Badge color={iOk(j.status)} style={{marginTop:4}}>{j.status}</Badge>
+                  <div style={{fontFamily:"'Space Grotesk'",fontSize:13,fontWeight:700,color:SH.teal}}>${(j.projectValue||0).toLocaleString()}</div>
+                  <Badge color={iOk(st)} style={{marginTop:4}}>{humanize(st)}</Badge>
                 </div>
               </div>
-              {j.status==="scheduled"&&(
-                <div style={{display:"flex",gap:6,marginTop:10}}>
-                  <Btn v="primary" sz="sm" T={T_I}><Ic n="map" s={12} c="#0A0F1E"/>Directions</Btn>
-                  <Btn v="outline" sz="sm" T={T_I}><Ic n="check" s={12} c={T_I.muted}/>Mark Complete</Btn>
-                  <Btn v="outline" sz="sm" T={T_I}><Ic n="edit" s={12} c={T_I.muted}/>Notes</Btn>
-                </div>
-              )}
+              <div style={{display:"flex",gap:6,marginTop:10}}>
+                {j.address&&<Btn v="primary" sz="sm" T={T_I} onClick={()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}`,"_blank","noopener")}><Ic n="map" s={12} c="#0A0F1E"/>Directions</Btn>}
+                <Btn v="outline" sz="sm" T={T_I} disabled={busyId===j.id} onClick={()=>markComplete(j)}><Ic n="check" s={12} c={T_I.muted}/>{busyId===j.id?"Saving…":"Mark Complete"}</Btn>
+              </div>
             </div>
           </div>
-        ))}
+        );})}
       </Card>
     </div>
   );
@@ -15059,30 +15133,75 @@ function InstSchedule(){
 
 function InstSettings(){
   const {isMobile,isTablet}=useBP();
-  const [s,setS]=useState({leads:true,jobs:true,reviews:true,payments:false});
+  const DEFAULT_PREFS={leads:true,jobs:true,reviews:true,payments:false};
+  const [s,setS]=useState(DEFAULT_PREFS);
+  const [areas,setAreas]=useState([]);
+  const [newArea,setNewArea]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState({type:"",text:""});
+
+  // Load the installer's saved settings from the real profile.
+  useEffect(()=>{
+    fetch("/api/installers/profile",{credentials:"include"})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not load settings");return d;})
+      .then(d=>{
+        const inst=d.installer||{};
+        if(inst.notificationPrefs&&typeof inst.notificationPrefs==="object") setS({...DEFAULT_PREFS,...inst.notificationPrefs});
+        setAreas(Array.isArray(inst.serviceAreas)?inst.serviceAreas:[]);
+      })
+      .catch(e=>setMsg({type:"error",text:e.message}))
+      .finally(()=>setLoading(false));
+  },[]);
+
+  const save=async()=>{
+    setSaving(true);setMsg({type:"",text:""});
+    try{
+      const r=await fetch("/api/installers/profile",{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({notificationPrefs:{leads:!!s.leads,jobs:!!s.jobs,reviews:!!s.reviews,payments:!!s.payments},serviceAreas:areas})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.error||"Could not save settings");
+      setMsg({type:"ok",text:"Settings saved."});
+    }catch(e){setMsg({type:"error",text:e.message});}
+    setSaving(false);
+  };
+
+  const addArea=()=>{
+    const v=newArea.trim();
+    if(!v) return;
+    if(!areas.some(a=>a.toLowerCase()===v.toLowerCase())) setAreas(p=>[...p,v]);
+    setNewArea("");
+  };
+
   return(
     <div>
       <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?18:20,fontWeight:700,color:T_I.text,marginBottom:18}}>Settings</h1>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
+      {msg.text&&<div style={{fontSize:11,marginBottom:12,color:msg.type==="ok"?SH.green:SH.red}}>{msg.text}</div>}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,opacity:loading?.6:1}}>
         <Card T={T_I} title="Notifications">
           <Tog on={s.leads} onChange={v=>setS(p=>({...p,leads:v}))} label="New Leads" sub="Alert when new lead assigned" T={T_I}/>
           <Tog on={s.jobs} onChange={v=>setS(p=>({...p,jobs:v}))} label="Job Reminders" sub="24h before scheduled job" T={T_I}/>
           <Tog on={s.reviews} onChange={v=>setS(p=>({...p,reviews:v}))} label="New Reviews" sub="Alert when customer reviews" T={T_I}/>
           <Tog on={s.payments} onChange={v=>setS(p=>({...p,payments:v}))} label="Payment Alerts" sub="When payout processed" T={T_I}/>
-          <div style={{marginTop:12}}><Btn T={T_I} sz="sm" onClick={()=>{ fetch("/api/installers/me",{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(profile)}).catch(()=>{}); }}>Save</Btn></div>
         </Card>
         <Card T={T_I} title="Service Areas">
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
-            {["Austin, TX","Round Rock, TX","Cedar Park, TX","Georgetown, TX","Pflugerville, TX"].map(a=>(
+            {areas.length===0&&!loading&&<div style={{fontSize:10,color:T_I.dim}}>No service areas yet.</div>}
+            {areas.map(a=>(
               <div key={a} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",background:T_I.hi,borderRadius:20,border:`1px solid ${T_I.bord}`}}>
                 <span style={{fontSize:10,color:T_I.text}}>📍 {a}</span>
-                <button><Ic n="x" s={9} c={T_I.dim}/></button>
+                <button aria-label={`Remove ${a}`} onClick={()=>setAreas(p=>p.filter(x=>x!==a))} style={{background:"none",border:"none",cursor:"pointer",padding:0,display:"flex"}}><Ic n="x" s={9} c={T_I.dim}/></button>
               </div>
             ))}
           </div>
-          <Btn T={T_I} sz="sm" v="ghost"><Ic n="plus" s={12} c={SH.teal}/>Add Area</Btn>
+          <div style={{display:"flex",gap:6}}>
+            <input value={newArea} onChange={e=>setNewArea(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addArea();}} placeholder="City, ST"
+              style={{flex:1,minWidth:0,background:T_I.hi,border:`1px solid ${T_I.bord}`,borderRadius:8,padding:"6px 9px",fontSize:11,color:T_I.text}}/>
+            <Btn T={T_I} sz="sm" v="ghost" onClick={addArea}><Ic n="plus" s={12} c={SH.teal}/>Add Area</Btn>
+          </div>
         </Card>
       </div>
+      <div style={{marginTop:14}}><Btn T={T_I} sz="sm" disabled={saving||loading} onClick={save}>{saving?"Saving…":"Save Settings"}</Btn></div>
     </div>
   );
 };
@@ -15092,6 +15211,8 @@ function InstSettings(){
 // ── InstDash — Installer dashboard overview ──────────────────────────────────
 const InstDash=({setTab,user})=>{
   const {isMobile}=useBP();
+  const {jobs:dashJobs,loading:dashJobsLoading}=useInstallerJobs();
+  const activeJobCount=dashJobs.filter(j=>["scheduled","in_progress"].includes(jobStatusKey(j.status))).length;
   const plan = INST_PLANS["PRO"];
   return(
     <div>
@@ -15131,7 +15252,7 @@ const InstDash=({setTab,user})=>{
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:18}}>
         {[
           {icon:"users",  label:"Active Leads",      value:IDATA.leads.length||0,       color:SH.teal,  tab:"leads"},
-          {icon:"tool",   label:"Active Jobs",        value:IDATA.jobs.length||0,        color:SH.gold,  tab:"jobs"},
+          {icon:"tool",   label:"Active Jobs",        value:dashJobsLoading?"…":activeJobCount,        color:SH.gold,  tab:"jobs"},
           {icon:"dollar", label:"Monthly Commission", value:"$0",                        color:SH.green, tab:"earnings"},
           {icon:"star",   label:"Avg Rating",         value:IDATA.profile.rating||"—",   color:SH.purple,tab:"reviews"},
         ].map(s=>(
@@ -21522,7 +21643,9 @@ function EntLogin({onLogin,onSwitch}) {
       const data = await r.json();
       if(!r.ok){ setErr(data.error||"Login failed"); setLoading(false); return; }
       if(!data.enterpriseAccess){ setErr("This account does not have Enterprise Portal access."); setLoading(false); return; }
-      onLogin(data.user);
+      // Attach the org role here too (same shape the /api/users/me reload path uses),
+      // otherwise the nav filters to Viewer-level items until the page is reloaded.
+      onLogin({...data.user,enterpriseRole:data.enterpriseAccess.role});
     }catch(e){ setErr("Network error — please try again."); }
     setLoading(false);
   };
