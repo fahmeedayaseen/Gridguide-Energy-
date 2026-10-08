@@ -1,9 +1,23 @@
-import { compatOk, readJson } from "@/app/api/_compat.js";
+/**
+ * Retired legacy endpoint: /api/installer/[...path]
+ *
+ * This catch-all used to answer every request with a fake success payload
+ * (membership "FREE", empty reports, "request received") and no
+ * authentication, which made broken front-end calls look like they worked.
+ * All installer features now live under /api/installers/*.
+ */
+import { NextResponse } from "next/server";
 
-export async function GET(request, { params }) {
-  return compatOk({ service: "installer", path: params.path || [], data: { membership: "FREE", reports: [], billing: null } });
+function gone(request, { params }) {
+  const path = (params?.path || []).join("/");
+  return NextResponse.json(
+    { ok: false, error: "This endpoint has been retired. Use /api/installers/* instead.", path },
+    { status: 410 }
+  );
 }
-export async function POST(request, { params }) {
-  const body = await readJson(request);
-  return compatOk({ service: "installer", path: params.path || [], method: "POST", message: "Installer request received.", data: { received: body } });
-}
+
+export const GET = gone;
+export const POST = gone;
+export const PATCH = gone;
+export const PUT = gone;
+export const DELETE = gone;

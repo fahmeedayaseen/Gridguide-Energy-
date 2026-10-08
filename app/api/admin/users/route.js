@@ -7,7 +7,8 @@ const updateUserSchema = z.object({
   plan:          z.enum(["HOMEOWNER_FREE","HOMEOWNER_PLUS","HOMEOWNER_PREMIUM"]).optional(),
   role:          z.enum(["CONSUMER","INSTALLER","SELLER","ADMIN"]).optional(),
   emailVerified: z.boolean().optional(),
-  suspended:     z.boolean().optional(), // sets role to null / flags account
+  // (A `suspended` flag used to be accepted here, but the User model has no
+  // such column, so every request that sent it failed with a 500.)
 }).strict();
 
 // GET /api/admin/users
@@ -17,8 +18,11 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("q") || "";
-  const role   = searchParams.get("role") || "";
-  const plan   = searchParams.get("plan") || "";
+  const roleQ  = searchParams.get("role") || "";
+  const planQ  = searchParams.get("plan") || "";
+  // Only pass known enum values to Prisma (an unknown value threw a 500).
+  const role   = ["CONSUMER","INSTALLER","SELLER","ADMIN"].includes(roleQ) ? roleQ : "";
+  const plan   = ["HOMEOWNER_FREE","HOMEOWNER_PLUS","HOMEOWNER_PREMIUM"].includes(planQ) ? planQ : "";
   const page   = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const limit  = Math.min(100, parseInt(searchParams.get("limit") || "50"));
   const skip   = (page - 1) * limit;
@@ -42,7 +46,7 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
       select: {
         id: true, name: true, email: true, role: true,
-        plan: true, emailVerified: true, createdAt: true,
+        plan: true, emailVerified: true, createdAt: true, subscriptionStatus: true,
         _count: { select: { orders: true, devices: true } },
       },
     }),

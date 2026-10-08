@@ -28,17 +28,49 @@ export async function POST(request, { params }) {
   try { payload = raw ? JSON.parse(raw) : {}; } catch { return err("Invalid JSON", 400); }
   const eventType = payload.type || payload.event_type || payload.eventType || "unknown";
   const externalId = payload.id || payload.event_id || payload.externalEventId || null;
-  const webhook = await prisma.vppProviderWebhook.create({ data: { providerId: provider.id, eventType, externalId, payload } });
+  // De-duplicate partner retries. The key is the delivery id when the partner
+  // sends one, otherwise the payload id, scoped by event type (so
+  // event.created and event.updated for the same event are both kept).
+  // (providerId, externalId) is unique; a retry is acknowledged with 200 and
+  // not processed again — previously each retry re-ran event/settlement logic.
+  const deliveryId = request.headers.get("x-webhook-id") || request.headers.get("x-delivery-id") || request.headers.get("idempotency-key")
+    || payload.webhook_id || payload.delivery_id || externalId;
+  const dedupeKey = deliveryId ? `${eventType}:${deliveryId}` : null;
+  let webhook;
+  try {
+    webhook = await prisma.vppProviderWebhook.create({ data: { providerId: provider.id, eventType, externalId: dedupeKey, payload } });
+  } catch (e) {
+    if (e?.code === "P2002") return ok({ received: true, duplicate: true });
+    throw e;
+  }
 
   if (["event.created", "vpp.event.created", "event.updated", "dispatch.created"].includes(eventType)) {
     const start = payload.windowStart || payload.start || payload.window_start;
     const end = payload.windowEnd || payload.end || payload.window_end;
     if (start && end) {
-      await prisma.vppPartnerEvent.upsert({
-        where: { id: payload.localId || `webhook-${webhook.id}` },
-        update: { status: payload.status?.toUpperCase?.() || undefined, metadata: payload },
-        create: { id: payload.localId || `webhook-${webhook.id}`, providerId: provider.id, externalEventId: externalId, name: payload.name || `${provider.name} Grid Event`, windowStart: new Date(start), windowEnd: new Date(end), grossRevenue: Number(payload.grossRevenue || payload.revenue || 0), metadata: payload },
-      }).catch(() => null);
+      // Match an existing local event by our id or the partner's event id.
+      // (The old code keyed new events on the webhook row id, so every
+      // event.updated delivery created a duplicate event.)
+      const existing = payload.localId
+        ? await prisma.vppPartnerEvent.findUnique({ where: { id: payload.localId } })
+        : externalId ? await prisma.vppPartnerEvent.findFirst({ where: { providerId: provider.id, externalEventId: externalId } }) : null;
+      const extProgramId = payload.programExternalId || payload.program_id || payload.externalProgramId || null;
+      const program = extProgramId ? await prisma.vppGridProgram.findFirst({ where: { providerId: provider.id, externalProgramId: String(extProgramId) } }) : null;
+      const statusMap = { SCHEDULED: "SCHEDULED", ACTIVE: "ACTIVE", COMPLETED: "COMPLETED", CANCELLED: "CANCELLED", CANCELED: "CANCELLED" };
+      const status = statusMap[String(payload.status || "").toUpperCase()];
+      try {
+        if (existing) {
+          await prisma.vppPartnerEvent.update({ where: { id: existing.id }, data: { ...(status && { status }), windowStart: new Date(start), windowEnd: new Date(end), metadata: payload } });
+        } else {
+          const created = await prisma.vppPartnerEvent.create({ data: { providerId: provider.id, programId: program?.id || null, externalEventId: externalId, name: payload.name || `${provider.name} Grid Event`, windowStart: new Date(start), windowEnd: new Date(end), ...(status && { status }), grossRevenue: Number(payload.grossRevenue || payload.revenue || 0), metadata: payload } });
+          if (created.programId) {
+            const enrollees = await prisma.vppProgramEnrollment.findMany({ where: { programId: created.programId, status: "ACTIVE" }, select: { id: true, userId: true } });
+            if (enrollees.length) await prisma.vppEventParticipation.createMany({ data: enrollees.map(e => ({ eventId: created.id, enrollmentId: e.id, userId: e.userId, status: "INVITED" })), skipDuplicates: true });
+          }
+        }
+      } catch (e) {
+        await prisma.vppProviderWebhook.update({ where: { id: webhook.id }, data: { processError: `Event upsert failed: ${e.message}` } }).catch(() => {});
+      }
     }
   }
 

@@ -57,7 +57,7 @@ export async function GET(request) {
     } catch (devErr) {
       logger.warn(`Device discovery failed for ${brand}`, { error: devErr.message });
       // Still save connection even if device discovery fails
-      devices = [{ id: `${brand}-${userId}`, name: `${integration.name} Account`, type: "thermostat" }];
+      devices = [{ id: `${brand}-${userId}`, name: `${integration.name} Account`, type: "thermostat", placeholder: true }];
     }
 
     // Save each device to the database
@@ -90,8 +90,12 @@ export async function GET(request) {
       // One-time 250-credit bonus per device. Keyed to Device.id (DB primary key)
       // so reconnects via upsert reuse the same key — blocked by RewardGrant
       // unique constraint. Safe to fire and forget; never blocks the redirect.
-      awardDeviceConnectCredits(userId, savedDevice.id, savedDevice.name || brand)
-        .catch(e => logger.warn("[OAuth] Device credit award failed", { error: e.message, deviceId: savedDevice.id }));
+      // No credits for the account-level placeholder saved when discovery
+      // fails — that isn't a real connected device.
+      if (!device.placeholder) {
+        awardDeviceConnectCredits(userId, savedDevice.id, savedDevice.name || brand)
+          .catch(e => logger.warn("[OAuth] Device credit award failed", { error: e.message, deviceId: savedDevice.id }));
+      }
     }
 
     logger.info(`Integration connected: ${brand} — ${saved} devices for user ${userId}`);

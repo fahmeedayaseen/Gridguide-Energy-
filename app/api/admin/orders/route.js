@@ -34,7 +34,7 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { name: true, email: true } },
-        items: { select: { quantity: true } },
+        items: { select: { quantity: true, price: true, product: { select: { name: true } } } },
         _count: { select: { payouts: true } },
       },
     }),
@@ -42,11 +42,20 @@ export async function GET(request) {
   ]);
 
   return ok({
+    // Shape matches what the admin Sales screen reads (user object, items
+    // with product names, carrier/tracking). The old flattened `buyer` string
+    // rendered every real order with a blank customer, items and tracking.
     orders: orders.map((o) => ({
-      id: o.id, status: o.status, total: o.total, createdAt: o.createdAt,
+      id: o.id, status: o.status, total: o.total, subtotal: o.subtotal, createdAt: o.createdAt,
+      user: o.user ? { name: o.user.name, email: o.user.email } : null,
       buyer: o.user?.name || o.user?.email || "Unknown",
+      items: o.items.map((i) => ({ quantity: i.quantity, price: i.price, product: { name: i.product?.name || "Item" } })),
       itemCount: o.items.reduce((s, i) => s + i.quantity, 0),
       sellerCount: o._count.payouts,
+      carrier: o.carrier || null,
+      trackingNumber: o.trackingNumber || null,
+      cancellationReason: o.cancellationReason || null,
+      refundAmount: o.refundAmount ?? null,
     })),
     total, page, pages: Math.ceil(total / limit),
   });

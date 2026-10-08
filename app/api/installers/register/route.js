@@ -21,7 +21,7 @@ const installerRegisterSchema = z.object({
   backgroundAuth:  z.string().url().optional(),
 });
 
-const SUCCESS_FEES = { FREE: 0.10, PRO: 0.07, ENTERPRISE: 0.05 };
+import { installerPlanFields } from "@/lib/installer-plans.js";
 
 export async function GET(request) {
   const auth = await authenticateRequest(request);
@@ -50,8 +50,10 @@ export async function POST(request) {
       licenseNumber:     data.licenseNumber,
       nabcepCertified:   data.nabcepCertified,
       verificationStatus: "PENDING",
-      plan:              data.plan,
-      successFeeRate:    SUCCESS_FEES[data.plan],
+      // Every installer starts on Free. A paid plan picked at signup is only
+      // granted after Stripe checkout (POST /api/installers/membership) —
+      // previously PRO/ENTERPRISE were granted here with no payment at all.
+      ...(await installerPlanFields("FREE")),
       serviceAreas:      data.serviceAreas,
       specialties:       data.specialties,
     },
@@ -71,5 +73,10 @@ export async function POST(request) {
     },
   });
 
-  return ok({ installer, message: "Installer application submitted." }, 201);
+  return ok({
+    installer,
+    // Front end sends the installer to checkout for this plan if it isn't FREE.
+    requestedPlan: data.plan,
+    message: "Installer application submitted.",
+  }, 201);
 }

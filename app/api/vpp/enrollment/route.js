@@ -48,7 +48,7 @@ export async function POST(request) {
     data: { userId: auth.user.id, action: "ENROLLED" },
   });
 
-  return ok({ enrolled: true, enrollment, message: "Successfully enrolled in VPP. You'll start earning from the next demand response event." });
+  return ok({ enrolled: true, enrollment, message: "Enrollment submitted. If your devices participate in an eligible event, any incentive is paid after the event settles." });
 }
 
 export async function DELETE(request) {

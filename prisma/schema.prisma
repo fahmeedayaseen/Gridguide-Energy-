@@ -201,7 +201,7 @@ model Installer {
   backgroundChecked  Boolean            @default(false)
   verificationStatus VerificationStatus @default(PENDING)
   plan               InstallerPlan      @default(FREE)
-  successFeeRate     Float              @default(0.05)
+  successFeeRate     Float              @default(0.10) // Free-tier lead success fee; set from lib/installer-plans.js on every plan change
   rating             Float              @default(0)
   reviewCount        Int                @default(0)
   jobsCompleted      Int                @default(0)
@@ -218,7 +218,7 @@ model Installer {
   revenueSharePct          Float   @default(0.15) // 15% Free, 25% Pro, 30% Enterprise
   lifetimeReferralEarnings Float   @default(0)
   monthlyReferralEarnings  Float   @default(0)
-  vppSharePct              Float   @default(0.05) // $5/event per referred home
+  vppSharePct              Float   @default(0) // installer share of VPP event revenue: Free 0% | Pro 5% | Enterprise 10%
 
   // Membership billing
   membershipMonthlyFee Float     @default(0) // 0 | 99 | 499
@@ -420,7 +420,7 @@ model Job {
   completedAt           DateTime?
   projectValue          Float
   successFee            Float
-  successFeeRate        Float     @default(0.08) // plan-tiered: Free=0.08, Pro=0.05, Enterprise=0.03; 0 for self-sourced jobs
+  successFeeRate        Float     @default(0.10) // plan-tiered lead success fee: Free 10% | Pro 7% | Enterprise 5%; 0 fee for self-sourced jobs
   status                JobStatus @default(SCHEDULED)
   jobType               String? // solar|battery|ev_charger|smart_panel|site_survey
   permitStatus          String    @default("not_started")
@@ -1858,6 +1858,8 @@ model Proposal {
   sentAt      DateTime?
   acceptedAt  DateTime?
   declinedAt  DateTime?
+  viewToken          String?   @unique // secure link emailed to the homeowner
+  viewTokenExpiresAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -1984,6 +1986,8 @@ model VppProvider {
   webhookSecretRef String?
   supportsOAuth    Boolean           @default(false)
   supportsWebhook  Boolean           @default(true)
+  publicVisible    Boolean           @default(false) // admin: may appear to homeowners/public
+  enrollmentOpen   Boolean           @default(false) // admin: homeowners may enroll now
   contactEmail     String?
   notes            String?
   metadata         Json?
@@ -2030,6 +2034,7 @@ model VppGridProgram {
   provider    VppProvider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
   enrollments VppProgramEnrollment[]
   events      VppPartnerEvent[]
+  earningsEstimates VppProgramEarningsEstimate[]
 
   @@index([providerId])
   @@index([state, utility])
@@ -2091,6 +2096,33 @@ enum VppEnrollmentStatus {
   PAUSED
   CANCELLED
   NEEDS_REAUTH
+  CANCELLATION_PENDING // opted out locally; partner not yet confirmed
+  CANCELLATION_FAILED  // partner rejected/failed the cancellation; needs follow-up
+}
+
+/// Admin-published, source-verified earnings estimate for a VPP program.
+/// The ONLY source of VPP dollar figures shown to homeowners or the public.
+model VppProgramEarningsEstimate {
+  id             String    @id @default(cuid())
+  programId      String
+  lowAmount      Float
+  highAmount     Float
+  period         String    // per_event | per_month | per_season | per_year
+  deviceType     String?   // BATTERY | EV_CHARGER | THERMOSTAT | SOLAR_INVERTER
+  sourceVerified Boolean   @default(false)
+  sourceName     String
+  sourceUrl      String?
+  notes          String?
+  validFrom      DateTime  @default(now())
+  validTo        DateTime?
+  publishedById  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  program VppGridProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+  @@map("vpp_program_earnings_estimates")
 }
 
 model VppPartnerEvent {
@@ -2219,6 +2251,7 @@ model VppProviderWebhook {
 
   provider VppProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
+  @@unique([providerId, externalId]) // partner retries are recorded once (NULL externalIds are not deduped)
   @@index([providerId])
   @@index([eventType])
   @@index([processed])
@@ -2254,6 +2287,10 @@ model PlatformConfig {
   leadSuccessFeeFree         Float @default(0.10) // 10% — Free plan
   leadSuccessFeePro          Float @default(0.07) // 7%  — Pro plan
   leadSuccessFeeEnterprise   Float @default(0.05) // 5%  — Enterprise plan
+
+  // Installer VPP projection — an ASSUMPTION used only for the "projected per
+  // event" figure on the installer VPP earnings view. Never used in settlement.
+  vppProjectedPerEventRate   Float @default(5) // $ per enrolled referred home per event
   // Donations are sourced from the cash wallet (VPP earnings), NOT Credits.
   // The homeowner earns gridFundDonationBonusPct of the donated dollar value
   // back as GridGuide Credits (converted at creditsPerDollar).
@@ -2969,7 +3006,7 @@ model UnsubscribeToken {
 // ── Durable delivery job — replaces inline HTTP send loop ────────────────────
 model InvitationDeliveryJob {
   id             String    @id @default(cuid())
-  invitationType String // INSTALLER | ENTERPRISE_HOMEOWNER | SELLER_MESSAGE | SELLER_TEAM_INVITE | PARTNER_INVITATION
+  invitationType String // INSTALLER | ENTERPRISE_HOMEOWNER | SELLER_MESSAGE | SELLER_TEAM_INVITE | PARTNER_INVITATION | PROPOSAL
   invitationId   String // InstallerCustomerInvite.id or EnterpriseHomeownerInvite.id
   campaignId     String? // null for standalone invites
   recipientEmail String

@@ -261,6 +261,31 @@ export async function POST(request) {
           },
         });
 
+      } else if (job.invitationType === "PROPOSAL") {
+        const proposal = await prisma.proposal.findUnique({
+          where:   { id: job.invitationId },
+          include: { lead: true, installer: { select: { companyName: true } } },
+        });
+        if (!proposal) throw new Error(`Proposal not found: ${job.invitationId}`);
+        if (proposal.status !== "SENT" || !proposal.viewToken) {
+          throw new Error(`Refusing to send proposal ${proposal.id} in status ${proposal.status}`);
+        }
+        const appUrl  = process.env.NEXT_PUBLIC_APP_URL || "https://gridguide.ai";
+        const viewUrl = `${appUrl}/proposal/${proposal.viewToken}`;
+        const company = proposal.installer?.companyName || "Your installer";
+        const first   = (proposal.lead.customerName || "").split(" ")[0] || "there";
+        const amount  = `$${proposal.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+        const expires = proposal.viewTokenExpiresAt ? proposal.viewTokenExpiresAt.toLocaleDateString("en-US") : null;
+        const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const result = await sendEmail({
+          to:      job.recipientEmail,
+          subject: `${company} sent you a proposal: ${proposal.title}`,
+          text:    `Hi ${first},\n\n${company} sent you a proposal for "${proposal.title}" (${amount}).\n\nView it here: ${viewUrl}${expires ? `\n\nThis link is valid until ${expires}.` : ""}\n\nSent via GridGuide`,
+          html:    `<p>Hi ${esc(first)},</p><p><strong>${esc(company)}</strong> sent you a proposal for <strong>${esc(proposal.title)}</strong> (${amount}).</p><p><a href="${viewUrl}">View your proposal</a></p>${expires ? `<p style="color:#666;font-size:13px">This link is valid until ${expires}.</p>` : ""}<p style="color:#666;font-size:13px">Sent via GridGuide</p>`,
+        });
+        if (!result?.success) throw new Error(result?.error || "Proposal email send failed");
+        providerId = result.providerId ?? null;
+
       } else {
         throw new Error(`Unsupported invitationType: ${job.invitationType}`);
       }
