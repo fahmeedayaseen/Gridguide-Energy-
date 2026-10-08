@@ -209,6 +209,7 @@ model Installer {
   stripeAccountId    String?            @unique
   serviceAreas       String[]
   specialties        String[]
+  notificationPrefs  Json? // {leads, jobs, reviews, payments} booleans from Installer → Settings
 
   // Revenue partner / referral program
   referralCode             String? @unique // installer's personal referral code
