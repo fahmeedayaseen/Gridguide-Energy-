@@ -636,7 +636,7 @@ function EnergyHome({nav}) {
           </div>
           <div style={{textAlign:"center",padding:"28px 20px",background:C.navyMid,borderRadius:14,border:`1px solid ${C.navyBord}`}}>
             <h3 style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:C.text,marginBottom:8}}>Are you a licensed installer?</h3>
-            <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Join the GridGuide network. Free to sign up — 5% success fee on completed GridGuide-generated projects.</p>
+            <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Join the GridGuide network. Free to sign up — success fee only on completed GridGuide-generated projects (10% Free · 7% Pro · 5% Enterprise).</p>
             <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
               <Btn size="md" variant="primary" onClick={()=>nav("e-installers")}>Apply to Join Network<Icon name="arrow" size={14} color={C.navy}/></Btn>
               <Btn size="md" variant="ghost" onClick={()=>nav("e-installers")}>View Full Installer Info</Btn>
@@ -1277,7 +1277,7 @@ function EnergyInstallerSignup({nav}) {
         <div style={{textAlign:"center",marginBottom:32}}>
           <Chip color={C.teal} style={{marginBottom:12}}>Installer Network</Chip>
           <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?24:32,fontWeight:700,color:C.text,marginBottom:8}}>Join the GridGuide Installer Network</h1>
-          <p style={{color:C.muted,fontSize:13,lineHeight:1.7}}>Free to join · Background-checked · 5% success fee only on completed projects</p>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.7}}>Free to join · Background-checked · Success fee only on completed GridGuide-sourced projects (10% / 7% / 5% by plan)</p>
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:12}}>
             {[{icon:"shield",l:"License verified"},{icon:"check",l:"Background checked"},{icon:"star",l:"Homeowner rated"},{icon:"award",l:"NABCEP recognized"}].map(b=>(
               <div key={b.l} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.muted,padding:"5px 10px",background:C.navyCard,borderRadius:20,border:`1px solid ${C.navyBord}`}}>

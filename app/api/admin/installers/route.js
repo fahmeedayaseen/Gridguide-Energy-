@@ -6,10 +6,10 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { requireRole } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getInstallerSuccessFeeRates, getInstallerSuccessFeeRate } from "@/lib/platform-config.js";
 
 const PLAN_SHARE  = { FREE: 0.15, PRO: 0.25, ENTERPRISE: 0.30 };
 const PLAN_FEE    = { FREE: 0,    PRO: 99,    ENTERPRISE: 499  };
-const SUCCESS_FEE = { FREE: 0.10, PRO: 0.07,  ENTERPRISE: 0.05 };
 
 const updateSchema = z.object({
   verificationStatus: z.enum(["PENDING","VERIFIED","REJECTED","SUSPENDED"]).optional(),
@@ -63,6 +63,7 @@ export async function GET(request) {
     }),
   ]);
 
+  const feeRates = await getInstallerSuccessFeeRates();
   const enriched = installers.map(inst => {
     const subscribed   = inst.referrals.filter(r => r.conversionStatus === "subscribed" && r.verified);
     const monthlyGross = subscribed.reduce((a, r) => a + r.monthlyRevenue, 0);
@@ -81,7 +82,7 @@ export async function GET(request) {
         vppTotalEarned:  parseFloat(vppTotal.toFixed(2)),
         netMonthly:      parseFloat((monthlyShare - (PLAN_FEE[inst.plan] || 0)).toFixed(2)),
         shareRate:       PLAN_SHARE[inst.plan] || 0.15,
-        successFeeRate:  SUCCESS_FEE[inst.plan] || 0.10,
+        successFeeRate:  feeRates[inst.plan] ?? feeRates.FREE,
         avgRating,
       },
     };
@@ -126,7 +127,7 @@ export async function PATCH(request) {
       plan:                 data.plan,
       revenueSharePct:      PLAN_SHARE[data.plan],
       membershipMonthlyFee: PLAN_FEE[data.plan],
-      successFeeRate:       SUCCESS_FEE[data.plan],
+      successFeeRate:       await getInstallerSuccessFeeRate(data.plan),
     }),
   };
 

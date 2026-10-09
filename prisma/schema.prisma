@@ -201,7 +201,7 @@ model Installer {
   backgroundChecked  Boolean            @default(false)
   verificationStatus VerificationStatus @default(PENDING)
   plan               InstallerPlan      @default(FREE)
-  successFeeRate     Float              @default(0.05)
+  successFeeRate     Float              @default(0.10) // display copy of the plan rate; charged rate comes from PlatformConfig.leadSuccessFee* (lib/platform-config.js)
   rating             Float              @default(0)
   reviewCount        Int                @default(0)
   jobsCompleted      Int                @default(0)
@@ -419,7 +419,7 @@ model Job {
   completedAt           DateTime?
   projectValue          Float
   successFee            Float
-  successFeeRate        Float     @default(0.08) // plan-tiered: Free=0.08, Pro=0.05, Enterprise=0.03; 0 for self-sourced jobs
+  successFeeRate        Float     @default(0.10) // rate applied at creation: Free 0.10, Pro 0.07, Enterprise 0.05 (admin-adjustable); 0 for self-sourced jobs
   status                JobStatus @default(SCHEDULED)
   jobType               String? // solar|battery|ev_charger|smart_panel|site_survey
   permitStatus          String    @default("not_started")
