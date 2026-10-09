@@ -1,0 +1,3372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  passwordHash         String
+  name                 String
+  phone                String?
+  avatar               String?
+  role                 UserRole  @default(CONSUMER)
+  plan                 Plan      @default(HOMEOWNER_FREE)
+  planExpiresAt        DateTime?
+  emailVerified        Boolean   @default(false)
+  twoFactorEnabled     Boolean   @default(false)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?
+  subscriptionStatus   String?   @default("inactive")
+  currentPeriodEnd     DateTime? @unique
+  membershipStatus     String?   @default("active")
+  creditBalance        Float     @default(0)
+
+  // Signup & onboarding tracking
+  signupSource         String? // web | mobile | referral | installer | seller
+  utmSource            String? // utm_source value
+  utmCampaign          String? // utm_campaign value
+  referralCode         String? // referral code used at signup
+  personalReferralCode String? @unique // homeowner share code for invite credits
+  referredByUserId     String? // user who referred them
+  homeAddress          String? // full formatted address from signup step 2
+  homeZip              String?
+  homeState            String?
+  onboardingStep       Int     @default(0) // 0=incomplete, 4=fully onboarded
+  onboardingCompleted  Boolean @default(false)
+  utilityConnected     Boolean @default(false)
+  utilityProvider      String? // name of connected utility
+
+  // Activity tracking
+  lastLoginAt    DateTime?
+  lastActiveAt   DateTime?
+  sessionCount   Int       @default(0)
+  totalAiChats   Int       @default(0)
+  totalVppEvents Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sessions                  Session[]
+  orders                    Order[]
+  devices                   Device[]
+  thermostat                Thermostat?
+  vppEnrollment             VppEnrollment?
+  vppPayouts                VppPayout[]
+  rewards                   Reward?
+  rebateClaims              RebateClaim[]
+  sellerMessagesSent        SellerMessage[]          @relation("SellerMessageBuyer")
+  rewardGrants              RewardGrant[]
+  aiChats                   AiChat[]
+  notifications             Notification[]
+  addressVerifications      AddressVerification[]
+  rewardRedemptions         RewardRedemption[]
+  wallet                    Wallet?
+  withdrawals               Withdrawal[]
+  gridFundDonations         GridFundDonation[]
+  installer                 Installer?
+  seller                    Seller?
+  organizations             OrganizationMember[]
+  ownedOrganizations        Organization[]           @relation("OrganizationOwner")
+  properties                Property[]
+  utilityAccounts           UtilityAccount[]
+  utilityConnectionEvents   UtilityConnectionEvent[]
+  integrationConnections    IntegrationConnection[]
+  revenueTransactions       RevenueTransaction[]
+  paymentCards              PaymentCard[]
+  payoutPreference          PayoutPreference?
+  siteSurveys               SiteSurvey[]
+  quoteChangeRequests       QuoteChangeRequest[]
+  vppEnrollmentLogs         VppEnrollmentLog[]
+  vppProgramEnrollments     VppProgramEnrollment[]
+  vppEventParticipations    VppEventParticipation[]
+  vppRevenueSplits          VppRevenueSplit[]
+  communityPosts            CommunityPost[]
+  communityLikes            CommunityLike[]
+  enterpriseSponsorship     EnterpriseSponsorship?
+  enterpriseTeamMemberships EnterpriseTeamMember[]
+  badges                    UserBadge[]
+  communityReplies          CommunityReply[]
+  signupEvents              SignupEvent[]
+  activityLogs              UserActivityLog[]
+  installerReferrals        InstallerReferral[]
+  referralsMade             HomeownerReferral[]      @relation("HomeownerReferralsMade")
+  referralsReceived         HomeownerReferral[]      @relation("HomeownerReferralsReceived")
+  creditAccount             CreditAccount?
+  creditRedemptions         CreditRedemption[]
+  enterpriseOrg             EnterpriseOrg?
+  sellerTeamMembers         SellerTeamMember[]
+
+  @@index([email])
+}
+
+enum UserRole {
+  CONSUMER
+  INSTALLER
+  SELLER
+  ENTERPRISE
+  ADMIN
+}
+
+enum Plan {
+  HOMEOWNER_FREE
+  HOMEOWNER_PLUS
+  HOMEOWNER_PREMIUM
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model Seller {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  businessName       String
+  category           String
+  description        String?
+  website            String?
+  licenseNumber      String?
+  taxId              String?
+  verificationStatus VerificationStatus @default(PENDING)
+  plan               SellerPlan         @default(FREE)
+  commissionRate     Float              @default(0.10) // 10% free, 7% pro, 5% enterprise
+
+  // ── Enterprise co-branded storefront fields ──────────────────────────────
+  // These are enabled only on the ENTERPRISE plan. GridGuide branding is
+  // not removed — the storefront is co-branded "ABC Solar — Powered by GridGuide."
+  storefrontSlug       String? @unique // e.g. "abc-solar" → marketplace.gridguide.ai/s/abc-solar
+  storefrontLogoUrl    String? // seller's logo displayed in their storefront header
+  storefrontBannerUrl  String? // hero banner image for their custom landing page
+  storefrontBrandColor String? // primary accent color (hex) for their storefront
+  storefrontTagline    String? // short tagline shown under their business name
+  customDomainEnabled  Boolean @default(false) // admin-approved CNAME mapping
+  customDomain         String? // e.g. "shop.abcsolar.com" — points via CNAME to GG
+  teamEnabled          Boolean @default(false) // Enterprise: multiple seller users under one account
+
+  stripeAccountId      String?  @unique
+  stripeSubscriptionId String?
+  totalSales           Float    @default(0)
+  totalPayouts         Float    @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products          Product[]
+  payouts           SellerPayout[]
+  messages          SellerMessage[]
+  sellerCustomers   SellerCustomer[]
+  sellerCampaigns   SellerCampaign[]
+  sellerQuotes      SellerQuote[]
+  sellerMessages    SellerMessageLog[]
+  sellerTeamMembers SellerTeamMember[]
+  SellerFulfillment SellerFulfillment[]
+}
+
+enum SellerPlan {
+  FREE // $0/mo — limited listings, standard storefront, basic analytics
+  PRO // $99/mo — unlimited listings, featured placement, advanced analytics
+  ENTERPRISE // $499/mo — co-branded storefront, team accounts, API, ERP/CRM integrations
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+model Installer {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  companyName        String
+  licenseNumber      String
+  nabcepCertified    Boolean            @default(false)
+  insuranceVerified  Boolean            @default(false)
+  backgroundChecked  Boolean            @default(false)
+  verificationStatus VerificationStatus @default(PENDING)
+  plan               InstallerPlan      @default(FREE)
+  successFeeRate     Float              @default(0.05)
+  rating             Float              @default(0)
+  reviewCount        Int                @default(0)
+  jobsCompleted      Int                @default(0)
+  totalEarnings      Float              @default(0)
+  stripeAccountId    String?            @unique
+  serviceAreas       String[]
+  specialties        String[]
+
+  // Revenue partner / referral program
+  referralCode             String? @unique // installer's personal referral code
+  totalReferredUsers       Int     @default(0) // homeowners referred to GridGuide
+  activeReferredUsers      Int     @default(0) // currently on paid plan
+  revenueSharePct          Float   @default(0.15) // 15% Free, 25% Pro, 30% Enterprise
+  lifetimeReferralEarnings Float   @default(0)
+  monthlyReferralEarnings  Float   @default(0)
+  vppSharePct              Float   @default(0.05) // $5/event per referred home
+
+  // Membership billing
+  membershipMonthlyFee Float     @default(0) // 0 | 99 | 499
+  membershipStatus     String    @default("active")
+  membershipRenewsAt   DateTime?
+  trialEndsAt          DateTime? // set for Pro plans: 14 days from upgrade; null for Free/Enterprise
+  stripeSubscriptionId String?
+
+  // Territory & CRM
+  territories    String[] // Geographic territories claimed
+  totalPortfolio Int      @default(0) // total past customers in CRM
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user                 User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads                InstallerLead[]
+  reviews              InstallerReview[]
+  payouts              InstallerPayout[]
+  jobs                 Job[]
+  location             InstallerLocation?
+  siteSurveys          SiteSurvey[]
+  quoteChangeRequests  QuoteChangeRequest[]
+  referrals            InstallerReferral[]
+  revenueShares        InstallerRevenueShare[]
+  vppEarnings          InstallerVppEarning[]
+  revenueRules         VppRevenueRule[]
+  homeownerInvites     EnterpriseHomeownerInvite[]
+  enterpriseNetwork    EnterpriseInstallerNetwork[]
+  proposals            Proposal[]
+  interconnectionTasks InterconnectionTask[]
+  permits              Permit[]
+  certifications       InstallerCertification[]
+  serviceZones         ServiceZone[]
+  commissionLedger     InstallerCommissionLedger[]
+  customerInvites      InstallerCustomerInvite[]
+  importBatches        InstallerImportBatch[]
+  campaigns            InstallerCampaign[]
+}
+
+enum InstallerPlan {
+  FREE // $0/mo — 15% homeowner revenue share, basic features
+  PRO // $99/mo — 25% homeowner revenue share, lead tools, priority listing
+  ENTERPRISE // $499/mo — 30% revenue share, multi-user, territory mgmt, API access, white-label
+}
+
+model Product {
+  id             String          @id @default(cuid())
+  sellerId       String
+  name           String
+  description    String
+  category       ProductCategory
+  price          Float
+  salePrice      Float?
+  sku            String?         @unique
+  inventory      Int             @default(0)
+  images         String[]
+  specs          Json?
+  rebateEligible Boolean         @default(false)
+  rebateAmount   Float?
+  status         ProductStatus   @default(PENDING_REVIEW)
+  featured       Boolean         @default(false)
+  viewCount      Int             @default(0)
+  soldCount      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  seller     Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  messages   SellerMessage[]
+
+  @@index([category])
+  @@index([status])
+}
+
+enum ProductCategory {
+  SOLAR
+  BATTERY
+  EV_CHARGING
+  SMART_PANEL
+  THERMOSTAT
+  MONITORING
+  ACCESSORIES
+}
+
+enum ProductStatus {
+  PENDING_REVIEW
+  ACTIVE
+  INACTIVE
+  REJECTED
+}
+
+model Order {
+  id                 String              @id @default(cuid())
+  userId             String
+  status             OrderStatus         @default(PENDING)
+  subtotal           Float
+  commission         Float
+  processingFee      Float
+  total              Float
+  stripePaymentId    String?             @unique
+  stripeSessionId    String?
+  trackingNumber     String?
+  carrier            String?
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  refundedAt         DateTime?
+  refundAmount       Float?
+  cancellationReason String?
+  fulfillments       SellerFulfillment[]
+  shippingAddress    Json?
+  notes              String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  user    User           @relation(fields: [userId], references: [id])
+  items   OrderItem[]
+  payouts SellerPayout[]
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  REFUNDED
+  CANCELLED
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model SellerMessage {
+  id        String   @id @default(cuid())
+  sellerId  String // the seller receiving the message
+  buyerId   String // the homeowner/buyer who sent it
+  productId String? // the product the message is about (optional)
+  body      String
+  read      Boolean  @default(false) // has the seller read it?
+  replyTo   String? // parent message id for threading
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller  Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer   User     @relation("SellerMessageBuyer", fields: [buyerId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([buyerId])
+}
+
+model InstallerLead {
+  id             String     @id @default(cuid())
+  installerId    String
+  customerName   String
+  customerEmail  String
+  customerPhone  String?
+  address        String
+  projectType    String
+  projectSize    Float?
+  notes          String?
+  status         LeadStatus @default(NEW)
+  estimatedValue Float?
+  successFee     Float?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  installer Installer  @relation(fields: [installerId], references: [id])
+  job       Job?
+  proposals Proposal[]
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUOTED
+  CONVERTED
+  LOST
+}
+
+model Job {
+  id                    String    @id @default(cuid())
+  installerId           String
+  leadId                String?   @unique
+  title                 String
+  description           String?
+  address               String
+  scheduledAt           DateTime?
+  completedAt           DateTime?
+  projectValue          Float
+  successFee            Float
+  successFeeRate        Float     @default(0.08) // plan-tiered: Free=0.08, Pro=0.05, Enterprise=0.03; 0 for self-sourced jobs
+  status                JobStatus @default(SCHEDULED)
+  jobType               String? // solar|battery|ev_charger|smart_panel|site_survey
+  permitStatus          String    @default("not_started")
+  interconnectionStatus String    @default("not_started")
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  installer            Installer             @relation(fields: [installerId], references: [id])
+  lead                 InstallerLead?        @relation(fields: [leadId], references: [id])
+  payout               InstallerPayout?
+  interconnectionTasks InterconnectionTask[]
+  permits              Permit[]
+}
+
+enum JobStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+model InstallerReview {
+  id          String   @id @default(cuid())
+  installerId String
+  rating      Int // 1-5
+  comment     String?
+  jobType     String?
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id])
+}
+
+model Device {
+  id     String @id @default(cuid())
+  userId String
+
+  // Normalized integration identity. Stored as strings so each provider can map
+  // its own device types without breaking the schema. Examples: solar, battery,
+  // ev_charger, smart_panel, thermostat, meter, energy_monitor, smart_plug.
+  type         String
+  brand        String? // tesla | enphase | solaredge | span | emporia | derapi | smartthings | alexa | nest | ecobee
+  name         String?
+  externalId   String?
+  capabilities Json?
+
+  manufacturer String?
+  model        String?
+  serialNumber String?
+  derApiId     String? // Derapi device ID
+  status       DeviceStatus @default(ACTIVE)
+  lastReading  Json? // Latest telemetry
+  lastSeenAt   DateTime?
+  lastSyncAt   DateTime?
+
+  // Provider tokens are server-only. Encrypt at the application/hosting layer before launch.
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+
+  // Extended device tracking
+  firmwareVersion         String?
+  capacityKwh             Float? // For batteries and EVs
+  capacityKw              Float? // For solar inverters
+  locationNote            String? // e.g. "Garage", "Roof south-facing"
+  vppEligible             Boolean   @default(false)
+  vppEnrolledAt           DateTime?
+  installedAt             DateTime?
+  installedBy             String? // installer company name or ID
+  connectedVia            String? // derapi | tesla | enphase | solaredge | span | emporia | smartthings | alexa | manual | upload
+  integrationConnectionId String?
+  isOnline                Boolean   @default(true)
+  totalEnergyKwh          Float     @default(0) // lifetime kWh
+
+  // Enterprise Portal fleet management: a device may optionally belong to a
+  // property in an Enterprise org's portfolio, in addition to its owning User.
+  enterprisePropertyId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  integrationConnection IntegrationConnection? @relation(fields: [integrationConnectionId], references: [id], onDelete: SetNull)
+  vppEnrollment         VppEnrollment?         @relation(fields: [userId], references: [userId], map: "Device_vppEnrollment_userId_fkey")
+  enterpriseProperty    EnterpriseProperty?    @relation(fields: [enterprisePropertyId], references: [id], onDelete: SetNull)
+  readings              DeviceReading[]
+
+  @@unique([externalId, userId])
+  @@index([userId])
+  @@index([brand])
+  @@index([type])
+  @@index([integrationConnectionId])
+  @@index([enterprisePropertyId])
+}
+
+model DeviceReading {
+  id         String   @id @default(cuid())
+  deviceId   String
+  reading    Json // same shape as Device.lastReading at capture time
+  recordedAt DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, recordedAt])
+}
+
+enum DeviceType {
+  SOLAR_INVERTER
+  BATTERY
+  EV_CHARGER
+  SMART_PANEL
+  THERMOSTAT
+  WATER_HEATER
+  SMART_PLUG
+  ENERGY_MONITOR
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING
+}
+
+model Thermostat {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  brand           String // ecobee | nest | honeywell | sensi | derapi
+  externalId      String // Brand device ID
+  accessToken     String? // Encrypted
+  refreshToken    String? // Encrypted
+  currentTemp     Float?
+  targetTemp      Float?
+  humidity        Float?
+  mode            String    @default("cool") // cool|heat|auto|off
+  aiOptimize      Boolean   @default(true)
+  vppPreCondition Boolean   @default(true)
+  awayMode        Boolean   @default(false)
+  schedule        Json? // Array of schedule slots
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum VppEventStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model VppEvent {
+  id               String         @id @default(cuid())
+  name             String
+  program          String // PG&E Demand Response, SCE DRAM, etc.
+  utility          String
+  windowStart      DateTime
+  windowEnd        DateTime
+  utilityPayment   Float
+  gridguideFee     Float // 10%
+  netPool          Float // utilityPayment - gridguideFee
+  totalKwh         Float? // Verified after event
+  participantCount Int            @default(0)
+  status           VppEventStatus @default(SCHEDULED)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  payouts             VppPayout[]
+  InstallerVppEarning InstallerVppEarning[]
+}
+
+model VppRevenueRule {
+  id   String @id @default(cuid())
+  name String // human label, e.g. "Default Enterprise Split", "Acme HOA negotiated rate"
+
+  vppProgram      String? // matches VppEvent.program, exact match, e.g. "PG&E Demand Response"
+  utility         String? // matches VppEvent.utility, exact match
+  enterpriseOrgId String? // applies when the homeowner's device is on this org's property
+  installerId     String? // applies when the homeowner has an active referral to this installer
+
+  homeownerPct Float
+  gridguidePct Float
+  partnerPct   Float @default(0) // goes to whichever partner matched (enterprise org or installer)
+
+  priority        Int      @default(0) // tiebreaker when multiple rules match with equal specificity
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  enterpriseOrg EnterpriseOrg? @relation(fields: [enterpriseOrgId], references: [id], onDelete: Cascade)
+  installer     Installer?     @relation(fields: [installerId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseOrgId])
+  @@index([installerId])
+  @@index([vppProgram])
+  @@index([utility])
+}
+
+model VppEnrollment {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  active     Boolean  @default(true)
+  enrolledAt DateTime @default(now())
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devices Device[]
+  payouts VppPayout[]
+}
+
+model VppPayout {
+  id               String       @id @default(cuid())
+  userId           String
+  eventId          String
+  enrollmentId     String
+  kwhDispatched    Float
+  sharePct         Float // User's % of total event kWh
+  grossAmount      Float // Before GridGuide fee
+  fee              Float // GridGuide 10%
+  netAmount        Float // What user receives
+  status           PayoutStatus @default(PENDING)
+  stripeTransferId String?
+  settledAt        DateTime?
+  createdAt        DateTime     @default(now())
+
+  user       User          @relation(fields: [userId], references: [id])
+  event      VppEvent      @relation(fields: [eventId], references: [id])
+  enrollment VppEnrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@index([userId])
+  @@index([eventId])
+}
+
+model SellerPayout {
+  id               String       @id @default(cuid())
+  sellerId         String
+  orderId          String
+  grossAmount      Float
+  commission       Float
+  processingFee    Float
+  netAmount        Float
+  status           PayoutStatus @default(PENDING)
+  stripeTransferId String?
+  scheduledFor     DateTime?
+  settledAt        DateTime?
+  createdAt        DateTime     @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id])
+}
+
+model InstallerPayout {
+  id               String       @id @default(cuid())
+  installerId      String
+  jobId            String       @unique
+  projectValue     Float
+  successFee       Float
+  netAmount        Float
+  status           PayoutStatus @default(PENDING)
+  stripeTransferId String?
+  scheduledFor     DateTime?
+  settledAt        DateTime?
+  createdAt        DateTime     @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id])
+  job       Job       @relation(fields: [jobId], references: [id])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model RebateClaim {
+  id             String      @id @default(cuid())
+  userId         String
+  programId      String?
+  programName    String
+  programType    String?
+  category       String?
+  amount         Float       @default(0)
+  productType    String?
+  zipCode        String?
+  status         ClaimStatus @default(PENDING)
+  documents      String[]
+  applicantName  String?
+  applicantPhone String?
+  installerName  String?
+  installDate    DateTime?
+  systemKw       Float?
+  notes          String?
+  submittedAt    DateTime    @default(now())
+  processedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([programId])
+}
+
+enum ClaimStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  PAID
+  CLAIMED
+  EXPIRED
+}
+
+model Reward {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  points           Int      @default(0)
+  tier             String   @default("Bronze") // Bronze|Silver|Gold|Platinum
+  lifetimePoints   Int      @default(0)
+  lifetimeRedeemed Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions RewardTransaction[]
+  redemptions  RewardRedemption[]
+}
+
+model RewardTransaction {
+  id        String   @id @default(cuid())
+  rewardId  String
+  points    Int // positive = earned, negative = redeemed
+  reason    String
+  type      String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  reward Reward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+}
+
+model AiChat {
+  id        String   @id @default(cuid())
+  userId    String
+  messages  Json // Array of {role, content, timestamp}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ZipCode {
+  id        String   @id @default(cuid())
+  zip       String   @unique
+  city      String
+  state     String   @db.Char(2)
+  county    String?
+  lat       Float
+  lng       Float
+  timezone  String?
+  utilityId String?
+  createdAt DateTime @default(now())
+
+  utility UtilityTerritory? @relation(fields: [utilityId], references: [id])
+
+  @@index([zip])
+  @@index([state])
+  @@index([lat, lng])
+}
+
+model UtilityTerritory {
+  id        String  @id @default(cuid())
+  name      String // "Pacific Gas and Electric"
+  shortName String // "PG&E"
+  state     String
+  eiaid     String? @unique // EIA utility ID
+  type      String // IOU | Cooperative | Municipal | Transmission
+  iso       String? // CAISO | ERCOT | PJM | MISO | NYISO | ISONE | SPP | FRCC | SERC | WECC
+
+  // Contact / self-service links (Phase 1: "website, customer portal URL")
+  website           String?
+  customerPortalUrl String?
+  phone             String?
+
+  // ── Connection method support (Phase 1 + drives Phase 2 routing order) ──
+  // Routing preference, in order, is: Green Button -> Arcadia -> direct API -> manual/bill upload.
+  // See lib/utility-routing.js for the actual decision function.
+  supportsGreenButton       Boolean                @default(false)
+  supportsArcadia           Boolean                @default(false)
+  supportsDirectApi         Boolean                @default(false)
+  supportsManualUpload      Boolean                @default(true) // always true in practice — the universal fallback
+  // Admin override: force a specific method regardless of the flags above (e.g. a utility
+  // whose Green Button feed is known to be unreliable can be temporarily pinned to ARCADIA).
+  preferredConnectionMethod UtilityConnectionType?
+  greenButtonAuthUrl        String? // utility's "Share My Data" / Green Button Connect authorization URL
+  arcadiaUtilityId          String? // Arcadia's internal utility identifier, if supported via Arcadia
+  directApiProvider         String? // "utilityapi" | "bayou" | a named direct integration
+  directApiBaseUrl          String?
+
+  // ── Program eligibility flags surfaced by the AI Utility Router (Phase 5) ──
+  vppEligible             Boolean @default(false)
+  netMeteringAvailable    Boolean @default(false)
+  touRatesAvailable       Boolean @default(false)
+  demandResponseAvailable Boolean @default(false)
+
+  isActive Boolean @default(true) // admin can disable a utility without deleting its history
+  notes    String? @db.Text
+
+  // Bounding box for fast pre-filter before PostGIS
+  minLat      Float?
+  maxLat      Float?
+  minLng      Float?
+  maxLng      Float?
+  // WKT polygon stored as text (full territory boundary)
+  boundaryWkt String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  zipCodes         ZipCode[]
+  programs         UtilityProgram[]
+  incentives       UtilityIncentive[]
+  ratePlans        UtilityRatePlan[]
+  connectionEvents UtilityConnectionEvent[]
+
+  @@index([state])
+  @@index([isActive])
+}
+
+enum UtilityProgramCategory {
+  DEMAND_RESPONSE
+  VPP
+  SOLAR
+  BATTERY
+  EV
+  ENERGY_EFFICIENCY
+}
+
+model UtilityProgram {
+  id          String                 @id @default(cuid())
+  utilityId   String
+  name        String // "Power Manager", "SmartRate", "EV Charger Rebate"
+  category    UtilityProgramCategory
+  description String?                @db.Text
+  url         String?
+  isActive    Boolean                @default(true)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  utility UtilityTerritory @relation(fields: [utilityId], references: [id], onDelete: Cascade)
+
+  @@index([utilityId])
+  @@index([category])
+}
+
+enum UtilityIncentiveCategory {
+  FEDERAL_TAX_CREDIT
+  STATE_TAX_CREDIT
+  STATE_REBATE
+  UTILITY_REBATE
+  NET_METERING
+  PROPERTY_TAX
+  SALES_TAX
+  EV_REBATE
+  RENEWABLE_CREDIT
+}
+
+model UtilityIncentive {
+  id                   String                   @id @default(cuid())
+  utilityId            String?
+  state                String                   @db.Char(2)
+  name                 String
+  category             UtilityIncentiveCategory
+  value                String // human-readable, e.g. "30% of system cost"
+  estimatedDollarValue Float? // used by the AI router's savings estimate
+  expiresOn            DateTime?
+  stackable            Boolean                  @default(true)
+  isActive             Boolean                  @default(true)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  utility UtilityTerritory? @relation(fields: [utilityId], references: [id], onDelete: Cascade)
+
+  @@index([utilityId])
+  @@index([state])
+  @@index([category])
+}
+
+model UtilityRatePlan {
+  id          String   @id @default(cuid())
+  utilityId   String
+  name        String // "E-TOU-C", "TOU-D-PRIME"
+  isTou       Boolean  @default(false)
+  peakRate    Float? // $/kWh
+  offPeakRate Float? // $/kWh
+  isEvRate    Boolean  @default(false)
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  utility UtilityTerritory @relation(fields: [utilityId], references: [id], onDelete: Cascade)
+
+  @@index([utilityId])
+}
+
+model UtilityConnectionEvent {
+  id           String                @id @default(cuid())
+  utilityId    String?
+  userId       String
+  method       UtilityConnectionType
+  success      Boolean
+  errorMessage String?
+  createdAt    DateTime              @default(now())
+
+  utility UtilityTerritory? @relation(fields: [utilityId], references: [id], onDelete: SetNull)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([utilityId])
+  @@index([userId])
+  @@index([method])
+  @@index([success])
+  @@index([createdAt])
+}
+
+model InstallerLocation {
+  id          String    @id @default(cuid())
+  installerId String    @unique
+  lat         Float
+  lng         Float
+  address     String
+  city        String
+  state       String
+  zip         String
+  placeId     String? // Google Place ID
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  installer Installer @relation(fields: [installerId], references: [id], onDelete: Cascade)
+}
+
+model AddressVerification {
+  id               String   @id @default(cuid())
+  userId           String
+  rawInput         String
+  formattedAddress String
+  lat              Float
+  lng              Float
+  placeId          String
+  streetNumber     String?
+  route            String?
+  city             String?
+  state            String?
+  zip              String?
+  county           String?
+  country          String   @default("US")
+  utilityName      String?
+  verifiedAt       DateTime @default(now())
+  source           String   @default("google") // google | mapbox | manual
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([zip])
+}
+
+model RewardTier {
+  id          String   @id @default(cuid())
+  name        String   @unique // Bronze | Silver | Gold | Platinum, or whatever an admin names them
+  minPoints   Int
+  discountPct Float    @default(0) // display-only today, matching prior behavior - not applied at checkout anywhere
+  perks       String? // free-text description of tier perks, shown to homeowners
+  color       String? // hex color for badge/UI display
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([minPoints])
+}
+
+model PointRule {
+  id         String   @id @default(cuid())
+  actionCode String   @unique // e.g. "REFERRAL_SIGNUP", "REBATE_APPLIED", "VPP_EVENT_PARTICIPATED"
+  label      String // human-readable, shown in the admin UI
+  points     Int
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model RewardCatalogItem {
+  id              String   @id @default(cuid())
+  name            String // e.g. "$10 Statement Credit"
+  description     String?
+  pointsCost      Int
+  dollarValue     Float
+  fulfillmentType String // statement_credit | cash | gift_card | donate
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Badge {
+  id                String   @id @default(cuid())
+  name              String
+  description       String
+  iconName          String   @default("award") // maps to the existing Ic/Icon component's icon set
+  triggerType       String // AUTO | MANUAL
+  triggerActionCode String? // for AUTO: which action's cumulative count to watch (matches PointRule.actionCode by convention, but not a hard FK - a badge can watch a count that isn't itself a point-earning action)
+  triggerThreshold  Int? // for AUTO: the count that unlocks it
+  bonusPoints       Int      @default(0) // optional one-time point award on unlock, 0 = purely cosmetic
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  userBadges UserBadge[]
+}
+
+model UserBadge {
+  id              String   @id @default(cuid())
+  userId          String
+  badgeId         String
+  earnedAt        DateTime @default(now())
+  awardedByUserId String? // set only for MANUAL awards - null for AUTO unlocks
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model RewardRedemption {
+  id             String   @id @default(cuid())
+  userId         String
+  rewardId       String
+  option         String // statement_credit | cash | gift_card | donate
+  points         Int
+  dollarValue    Float
+  rate           Float
+  status         String   @default("PROCESSING") // PROCESSING | APPLIED | COMPLETED | FAILED
+  processingTime String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  reward Reward @relation(fields: [rewardId], references: [id])
+
+  @@index([userId])
+}
+
+model Wallet {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  balance            Float    @default(0)
+  pendingWithdrawals Float    @default(0)
+  lifetimeEarned     Float    @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id])
+  withdrawals Withdrawal[]
+
+  @@index([userId])
+}
+
+model Withdrawal {
+  id             String   @id @default(cuid())
+  userId         String
+  walletId       String
+  method         String // ach | paypal | check | wire
+  grossAmount    Float
+  fee            Float    @default(0)
+  netAmount      Float
+  status         String   @default("PROCESSING") // PROCESSING | COMPLETED | FAILED | CANCELLED
+  processingTime String?
+  destination    String? // masked destination description
+  routingLast4   String?
+  accountLast4   String?
+  stripePayoutId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([userId])
+}
+
+model GridFundDonation {
+  id                 String   @id @default(cuid())
+  userId             String
+  amount             Float // dollar amount donated (always from cash wallet)
+  source             String   @default("cash_wallet") // cash_wallet (only valid source — donations come from VPP cash earnings, not Credits)
+  creditBonusAwarded Int      @default(0) // 10% of donated dollar value, awarded back as Credits
+  redemptionId       String?
+  createdAt          DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model CommunityFundProject {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  amountFunded    Float
+  recipientName   String? // nonprofit/organization name, when applicable
+  receiptUrl      String? // link to a receipt or summary document, when available
+  fundedAt        DateTime @default(now())
+  isPublished     Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isPublished])
+  @@index([fundedAt])
+}
+
+model Organization {
+  id                   String             @id @default(cuid())
+  name                 String
+  slug                 String             @unique
+  type                 OrganizationType   @default(HOMEOWNER)
+  plan                 Plan               @default(HOMEOWNER_PREMIUM)
+  ownerId              String
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  seatsLimit           Int? // null = unlimited for custom enterprise contracts
+  propertyLimit        Int? // null = unlimited
+  apiEnabled           Boolean            @default(false)
+  whiteLabelEnabled    Boolean            @default(false)
+  status               OrganizationStatus @default(ACTIVE)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  owner               User                 @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  members             OrganizationMember[]
+  properties          Property[]
+  utilityAccounts     UtilityAccount[]
+  vppPrograms         VppProgram[]
+  revenueTransactions RevenueTransaction[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum OrganizationType {
+  HOMEOWNER
+  PROPERTY_MANAGER
+  COMMERCIAL
+  UTILITY
+  PARTNER
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+model OrganizationMember {
+  id             String        @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgMemberRole @default(MEMBER)
+  status         MemberStatus  @default(ACTIVE)
+  invitedEmail   String?
+  invitedAt      DateTime?
+  joinedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+enum OrgMemberRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum MemberStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+model Property {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String?
+  name           String
+  propertyType   PropertyType @default(SINGLE_FAMILY)
+  address        String
+  city           String?
+  state          String?
+  zip            String?
+  lat            Float?
+  lng            Float?
+  squareFeet     Int?
+  utilityName    String?
+  timezone       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  utilityAccounts UtilityAccount[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([zip])
+}
+
+enum PropertyType {
+  SINGLE_FAMILY
+  MULTI_FAMILY
+  COMMERCIAL
+  INDUSTRIAL
+  MUNICIPAL
+}
+
+model IntegrationConnection {
+  id             String                  @id @default(cuid())
+  userId         String
+  provider       String // utilityapi | arcadia | bayou | derapi | tesla | enphase | solaredge | span | emporia | smartthings | alexa | nest | ecobee | honeywell
+  authType       String // oauth2 | api_key | credentials | matter | manual
+  status         UtilityConnectionStatus @default(PENDING)
+  externalUserId String?
+  accountName    String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String?
+  lastSyncAt     DateTime?
+  lastSyncStatus String?
+  syncError      String?
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devices Device[]
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+}
+
+model UtilityAccount {
+  id                   String                  @id @default(cuid())
+  userId               String
+  organizationId       String?
+  propertyId           String?
+  provider             String
+  utilityAccountNumber String?
+  externalAccountId    String?
+  connectionType       UtilityConnectionType   @default(MANUAL)
+  status               UtilityConnectionStatus @default(PENDING)
+  tariff               String?
+  serviceAddress       String?
+  meterNumber          String?
+  lastSyncAt           DateTime?
+  syncError            String?
+  accessToken          String?
+  refreshToken         String?
+  metadata             Json?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  bills        UtilityBill[]
+
+  @@unique([externalAccountId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([provider])
+}
+
+enum UtilityConnectionType {
+  MANUAL
+  GREEN_BUTTON
+  DERAPI
+  UTILITY_API
+  CSV_UPLOAD
+  BAYOU
+  ARCADIA
+  BILL_UPLOAD
+  TESLA
+  ENPHASE
+  SOLAREDGE
+  SPAN
+  EMPORIA
+  SMARTTHINGS
+  AMAZON_ALEXA
+}
+
+model UtilityBill {
+  id               String    @id @default(cuid())
+  userId           String
+  utilityAccountId String
+  statementDate    DateTime?
+  serviceStart     DateTime?
+  serviceEnd       DateTime?
+  amountDue        Float?
+  totalKwh         Float?
+  dueDate          DateTime?
+  documentUrl      String?
+  source           String    @default("upload") // upload | utilityapi | green_button | manual
+  extractedData    Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  account UtilityAccount @relation(fields: [utilityAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([utilityAccountId])
+  @@index([statementDate])
+}
+
+enum UtilityConnectionStatus {
+  PENDING
+  CONNECTED
+  NEEDS_REAUTH
+  ERROR
+  DISCONNECTED
+}
+
+model VppProgram {
+  id              String        @id @default(cuid())
+  organizationId  String?
+  name            String
+  utility         String
+  market          String?
+  region          String?
+  status          ProgramStatus @default(ACTIVE)
+  rules           Json?
+  payoutRateKwh   Float?
+  gridguideFeePct Float         @default(0.10)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  operations   VppOperation[]
+
+  @@index([organizationId])
+  @@index([utility])
+}
+
+enum ProgramStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+model VppOperation {
+  id               String             @id @default(cuid())
+  programId        String?
+  eventId          String?
+  name             String
+  operationType    VppOperationType   @default(DEMAND_RESPONSE)
+  status           VppOperationStatus @default(PLANNED)
+  targetKw         Float?
+  committedKw      Float?
+  deliveredKwh     Float?
+  windowStart      DateTime
+  windowEnd        DateTime
+  participantCount Int                @default(0)
+  estimatedRevenue Float              @default(0)
+  actualRevenue    Float              @default(0)
+  gridguideFee     Float              @default(0)
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  program VppProgram? @relation(fields: [programId], references: [id], onDelete: SetNull)
+
+  @@index([programId])
+  @@index([status])
+  @@index([windowStart])
+}
+
+enum VppOperationType {
+  DEMAND_RESPONSE
+  BATTERY_DISPATCH
+  EV_CHARGING_SHIFT
+  THERMOSTAT_PRECOOL
+  LOAD_REDUCTION
+}
+
+enum VppOperationStatus {
+  PLANNED
+  ENROLLING
+  ACTIVE
+  VERIFYING
+  SETTLED
+  CANCELLED
+}
+
+model RevenueTransaction {
+  id             String        @id @default(cuid())
+  userId         String?
+  organizationId String?
+  source         RevenueSource
+  sourceId       String?
+  grossAmount    Float
+  gridguideFee   Float         @default(0)
+  partnerFee     Float         @default(0)
+  netAmount      Float
+  status         RevenueStatus @default(PENDING)
+  description    String?
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  settledAt      DateTime?
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([source])
+  @@index([status])
+}
+
+enum RevenueSource {
+  MEMBERSHIP
+  MARKETPLACE
+  SELLER_COMMISSION
+  INSTALLER_SUCCESS_FEE
+  VPP_EVENT
+  ENTERPRISE_CONTRACT
+  REBATE_PROCESSING
+}
+
+enum RevenueStatus {
+  PENDING
+  PROCESSING
+  SETTLED
+  FAILED
+  REFUNDED
+}
+
+model PayoutBatch {
+  id           String          @id @default(cuid())
+  batchType    PayoutBatchType
+  status       PayoutStatus    @default(PENDING)
+  grossAmount  Float           @default(0)
+  feeAmount    Float           @default(0)
+  netAmount    Float           @default(0)
+  itemCount    Int             @default(0)
+  scheduledFor DateTime?
+  processedAt  DateTime?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([batchType])
+  @@index([status])
+}
+
+enum PayoutBatchType {
+  SELLER
+  INSTALLER
+  VPP
+  REWARDS
+  ENTERPRISE_PARTNER
+}
+
+model PaymentCard {
+  id             String   @id @default(cuid())
+  userId         String
+  stripeCardId   String   @unique // Stripe PaymentMethod ID (pm_...)
+  brand          String // VISA | Mastercard | Amex
+  last4          String
+  expMonth       Int
+  expYear        Int
+  cardholderName String
+  role           CardRole @default(SECONDARY)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum CardRole {
+  PRIMARY
+  SECONDARY
+}
+
+model PayoutPreference {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  method           String   @default("stripe") // stripe | ach | paypal
+  stripeCardId     String? // For Stripe instant payouts
+  bankRoutingLast4 String?
+  bankAccountLast4 String?
+  bankAccountName  String?
+  paypalEmail      String?
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SiteSurvey {
+  id          String       @id @default(cuid())
+  userId      String
+  installerId String?
+  quoteId     String?
+  scheduledAt DateTime
+  timeSlot    String // "9:00 AM"
+  notes       String?
+  status      SurveyStatus @default(SCHEDULED)
+  confirmedAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installer Installer? @relation(fields: [installerId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([installerId])
+  @@index([scheduledAt])
+}
+
+enum SurveyStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model QuoteChangeRequest {
+  id          String              @id @default(cuid())
+  userId      String
+  installerId String?
+  quoteId     String?
+  message     String
+  status      ChangeRequestStatus @default(PENDING)
+  resolvedAt  DateTime?
+  resolution  String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installer Installer? @relation(fields: [installerId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([installerId])
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  IN_REVIEW
+  REVISED
+  DECLINED
+}
+
+model VppEnrollmentLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String // ENROLLED | OPTED_OUT
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model BlogPost {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  body        String
+  excerpt     String?
+  tag         String
+  authorName  String    @default("GridGuide Team")
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+  readMinutes Int       @default(5)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([published])
+  @@index([tag])
+  @@index([slug])
+}
+
+model CommunityPost {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  tag       String
+  location  String?
+  likes     Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies CommunityReply[]
+  likedBy CommunityLike[]
+
+  @@index([userId])
+  @@index([tag])
+}
+
+model CommunityLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model CommunityReply {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model SignupEvent {
+  id          String    @id @default(cuid())
+  userId      String? // null if anonymous / abandoned
+  sessionId   String? // anonymous session token
+  step        Int // 1=account, 2=address, 3=utility, 4=completed
+  stepName    String // "account" | "address" | "utility" | "completed"
+  completed   Boolean   @default(false)
+  abandonedAt DateTime?
+  completedAt DateTime?
+  source      String? // web | mobile
+  utmSource   String?
+  createdAt   DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([step, completed])
+  @@index([createdAt])
+}
+
+model UserActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String // login | logout | device_connected | vpp_enrolled | utility_connected | rebate_applied | order_placed
+  metadata  Json? // flexible extra data
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model HomeownerReferral {
+  id             String    @id @default(cuid())
+  referrerId     String
+  referredUserId String    @unique
+  referralCode   String
+  sourceType     String    @default("signup") // signup | invite | share
+  status         String    @default("signed_up") // signed_up | verified | subscribed | reversed
+  rewardPoints   Int       @default(500) // @deprecated — use creditsAwarded
+  creditsAwarded Int       @default(2500) // one-time credits on successful referral (= $2.50)
+  creditAmount   Float     @default(5)
+  rewardedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  referrer     User @relation("HomeownerReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser User @relation("HomeownerReferralsReceived", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
+  @@index([referralCode])
+  @@index([status])
+}
+
+model InstallerReferral {
+  id               String    @id @default(cuid())
+  installerId      String
+  userId           String // The referred homeowner
+  referralCode     String
+  referredAt       DateTime  @default(now())
+  conversionStatus String    @default("referred") // referred | activated | subscribed | churned
+  activatedAt      DateTime?
+  subscribedAt     DateTime?
+  churnedAt        DateTime?
+  userPlan         String    @default("HOMEOWNER_FREE") // homeowner's current plan
+  monthlyRevenue   Float     @default(0) // homeowner's subscription amount
+  installerShare   Float     @default(0) // installer's monthly cut
+  lifetimeValue    Float     @default(0) // total paid to installer from this referral
+  sourceType       String    @default("signup") // signup | import | qr_code | link
+  // A referral created by the real signup-with-code flow (app/api/auth/register)
+  // is auto-verified, since the referral code itself is real proof. A referral
+  // self-reported by an installer (manual add or bulk import, via
+  // POST /api/installers/referrals) is NOT proof of any real relationship and
+  // starts unverified - the commission-calculation path (see
+  // payments/webhook/route.js) will never pay out for an unverified referral,
+  // regardless of what the homeowner's own subscription later does. Verified
+  // by either the claimed homeowner confirming the relationship, or an admin
+  // approving it.
+  verified         Boolean   @default(false)
+  verifiedAt       DateTime?
+  verifiedByUserId String? // the homeowner who confirmed, or the admin who approved
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  installer        Installer                   @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  user             User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commissionLedger InstallerCommissionLedger[]
+
+  @@unique([installerId, userId])
+  @@index([installerId])
+  @@index([userId])
+  @@index([referralCode])
+  @@index([conversionStatus])
+  @@index([verified])
+}
+
+model InstallerRevenueShare {
+  id                       String    @id @default(cuid())
+  installerId              String
+  periodStart              DateTime
+  periodEnd                DateTime
+  activeHomeowners         Int       @default(0)
+  totalSubscriptionRevenue Float     @default(0)
+  sharePercentage          Float
+  grossShareAmount         Float     @default(0)
+  gridguideFee             Float     @default(0)
+  netPayout                Float     @default(0)
+  vppBonus                 Float     @default(0) // from VPP events in period
+  membershipFee            Float     @default(0) // what installer paid GridGuide
+  status                   String    @default("PENDING") // PENDING | PROCESSING | PAID | FAILED
+  paidAt                   DateTime?
+  stripeTransferId         String?
+  createdAt                DateTime  @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id], onDelete: Cascade)
+
+  @@index([installerId])
+  @@index([status])
+  @@index([periodStart])
+}
+
+model InstallerVppEarning {
+  id                 String    @id @default(cuid())
+  installerId        String
+  vppEventId         String
+  participatingHomes Int       @default(0)
+  utilityPayment     Float     @default(0) // total utility payment for the event
+  installerShare     Float     @default(0) // installer's 5% cut
+  status             String    @default("PENDING")
+  paidAt             DateTime?
+  createdAt          DateTime  @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  event     VppEvent  @relation(fields: [vppEventId], references: [id])
+
+  @@index([installerId])
+  @@index([vppEventId])
+}
+
+model Proposal {
+  id          String         @id @default(cuid())
+  installerId String
+  leadId      String
+  title       String
+  amount      Float
+  notes       String?
+  lineItems   Json? // [{description, qty, unitPrice}
+  status      ProposalStatus @default(DRAFT)
+  validUntil  DateTime?
+  sentAt      DateTime?
+  acceptedAt  DateTime?
+  declinedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  installer Installer     @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  lead      InstallerLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([installerId])
+  @@index([leadId])
+  @@index([status])
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model InterconnectionTask {
+  id          String                  @id @default(cuid())
+  installerId String
+  jobId       String?
+  leadId      String?
+  utilityName String
+  taskName    String
+  taskType    InterconnectionTaskType @default(OTHER)
+  status      InterconnectionStatus   @default(PENDING)
+  dueDate     DateTime?
+  completedAt DateTime?
+  notes       String?
+  documentUrl String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  installer Installer @relation(fields: [installerId], references: [id])
+  job       Job?      @relation(fields: [jobId], references: [id])
+}
+
+enum InterconnectionTaskType {
+  APPLICATION
+  ONE_LINE_DIAGRAM
+  APPROVAL_TO_OPERATE
+  PERMIT_SUBMISSION
+  PERMIT_INSPECTION
+  NET_METERING
+  OTHER
+}
+
+enum InterconnectionStatus {
+  NOT_REQUIRED
+  NOT_STARTED
+  PENDING
+  WAITING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model Permit {
+  id           String       @id @default(cuid())
+  installerId  String
+  jobId        String?
+  permitType   String // electrical, building, solar, ev_charger
+  jurisdiction String
+  permitNumber String?
+  status       PermitStatus @default(NOT_STARTED)
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  expiresAt    DateTime?
+  inspectionAt DateTime?
+  documentUrl  String?
+  notes        String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  installer Installer @relation(fields: [installerId], references: [id])
+  job       Job?      @relation(fields: [jobId], references: [id])
+}
+
+enum PermitStatus {
+  NOT_STARTED
+  NOT_REQUIRED
+  PENDING
+  SUBMITTED
+  APPROVED
+  FAILED_INSPECTION
+  COMPLETE
+}
+
+model InstallerCertification {
+  id          String    @id @default(cuid())
+  installerId String
+  name        String
+  issuer      String
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  documentUrl String?
+  status      String    @default("verified") // verified | pending | expired
+  createdAt   DateTime  @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id])
+}
+
+model ServiceZone {
+  id          String   @id @default(cuid())
+  installerId String
+  city        String
+  state       String
+  zipCode     String?
+  radiusMiles Int      @default(25)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  installer Installer @relation(fields: [installerId], references: [id])
+}
+
+model VppProvider {
+  id               String            @id @default(cuid())
+  key              String            @unique // leap | enel | future partner key
+  name             String
+  status           VppProviderStatus @default(PENDING_CREDENTIALS)
+  apiBaseUrl       String?
+  webhookSecretRef String?
+  supportsOAuth    Boolean           @default(false)
+  supportsWebhook  Boolean           @default(true)
+  contactEmail     String?
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  programs    VppGridProgram[]
+  events      VppPartnerEvent[]
+  enrollments VppProgramEnrollment[]
+  webhooks    VppProviderWebhook[]
+
+  @@map("vpp_providers")
+}
+
+enum VppProviderStatus {
+  ACTIVE
+  SANDBOX
+  PENDING_CREDENTIALS
+  PAUSED
+  ERROR
+}
+
+model VppGridProgram {
+  id                String                 @id @default(cuid())
+  providerId        String
+  externalProgramId String?
+  name              String
+  market            String? // ISO/RTO: CAISO | ERCOT | PJM | MISO | NYISO | SPP | ISO-NE
+  state             String?
+  utility           String?
+  programType       VppProgramType         @default(DEMAND_RESPONSE)
+  deviceTypes       String[]               @default([]) // BATTERY, EV_CHARGER, THERMOSTAT, SOLAR_INVERTER
+  status            VppProgramAvailability @default(ACTIVE)
+  rules             Json?
+  estimatedRateKwh  Float?
+  estimatedRateKw   Float?
+  gridguideFeePct   Float                  @default(0.10)
+  installerSharePct Float                  @default(0.00)
+  homeownerSharePct Float                  @default(0.90)
+  conflictGroup     String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  provider    VppProvider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  enrollments VppProgramEnrollment[]
+  events      VppPartnerEvent[]
+
+  @@index([providerId])
+  @@index([state, utility])
+  @@index([market])
+  @@map("vpp_programs")
+}
+
+enum VppProgramType {
+  DEMAND_RESPONSE
+  BATTERY_DISPATCH
+  THERMOSTAT_CONTROL
+  EV_CHARGING_MANAGEMENT
+  SOLAR_EXPORT
+}
+
+enum VppProgramAvailability {
+  ACTIVE
+  WAITLIST
+  PAUSED
+  CLOSED
+}
+
+model VppProgramEnrollment {
+  id                   String              @id @default(cuid())
+  userId               String
+  providerId           String
+  programId            String
+  externalEnrollmentId String?
+  status               VppEnrollmentStatus @default(PENDING_CONSENT)
+  consentVersion       String?
+  consentAcceptedAt    DateTime?
+  utilityAccountId     String?
+  deviceIds            String[]            @default([])
+  routeReason          String?
+  lastSyncedAt         DateTime?
+  syncError            String?
+  metadata             Json?
+  enrolledAt           DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       VppProvider             @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  program        VppGridProgram          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  participations VppEventParticipation[]
+  revenueSplits  VppRevenueSplit[]
+
+  @@unique([userId, programId])
+  @@index([userId])
+  @@index([providerId])
+  @@index([status])
+  @@map("vpp_enrollments")
+}
+
+enum VppEnrollmentStatus {
+  PENDING_CONSENT
+  PENDING_PROVIDER
+  ACTIVE
+  REJECTED
+  PAUSED
+  CANCELLED
+  NEEDS_REAUTH
+}
+
+model VppPartnerEvent {
+  id              String                @id @default(cuid())
+  providerId      String
+  programId       String?
+  externalEventId String?
+  name            String
+  eventType       VppProgramType        @default(DEMAND_RESPONSE)
+  market          String?
+  utility         String?
+  state           String?
+  windowStart     DateTime
+  windowEnd       DateTime
+  status          VppPartnerEventStatus @default(SCHEDULED)
+  targetKw        Float?
+  committedKw     Float?
+  deliveredKwh    Float?
+  grossRevenue    Float                 @default(0)
+  metadata        Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  provider       VppProvider             @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  program        VppGridProgram?         @relation(fields: [programId], references: [id], onDelete: SetNull)
+  participations VppEventParticipation[]
+  revenueSplits  VppRevenueSplit[]
+
+  @@index([providerId])
+  @@index([programId])
+  @@index([status])
+  @@index([windowStart])
+  @@map("vpp_events")
+}
+
+enum VppPartnerEventStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  SETTLEMENT_PENDING
+  SETTLED
+  FAILED
+}
+
+model VppEventParticipation {
+  id             String                 @id @default(cuid())
+  eventId        String
+  enrollmentId   String
+  userId         String
+  deviceId       String?
+  status         VppParticipationStatus @default(INVITED)
+  committedKw    Float?
+  deliveredKwh   Float?
+  baselineKwh    Float?
+  performancePct Float?
+  metadata       Json?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  event      VppPartnerEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  enrollment VppProgramEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, enrollmentId])
+  @@index([userId])
+  @@index([status])
+  @@map("vpp_event_participation")
+}
+
+enum VppParticipationStatus {
+  INVITED
+  OPTED_IN
+  DISPATCHED
+  COMPLETED
+  MISSED
+  OPTED_OUT
+  FAILED
+}
+
+model VppRevenueSplit {
+  id              String           @id @default(cuid())
+  eventId         String
+  enrollmentId    String
+  userId          String
+  installerId     String?
+  grossAmount     Float
+  homeownerAmount Float
+  gridguideAmount Float
+  installerAmount Float            @default(0)
+  status          VppRevenueStatus @default(CALCULATED)
+  payoutBatchId   String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  event      VppPartnerEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  enrollment VppProgramEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, enrollmentId])
+  @@index([userId])
+  @@index([status])
+  @@map("vpp_revenue_splits")
+}
+
+enum VppRevenueStatus {
+  CALCULATED // split percentages computed, not yet credited
+  DEPOSITED // homeowner/installer cash deposited to their Wallet
+  APPROVED
+  PAYOUT_PENDING
+  PAID
+  HELD
+  FAILED
+}
+
+model VppProviderWebhook {
+  id           String   @id @default(cuid())
+  providerId   String
+  eventType    String
+  externalId   String?
+  payload      Json
+  processed    Boolean  @default(false)
+  processError String?
+  receivedAt   DateTime @default(now())
+
+  provider VppProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([eventType])
+  @@index([processed])
+  @@map("vpp_provider_webhooks")
+}
+
+model PlatformConfig {
+  id String @id @default("singleton") // only one row ever
+
+  // ── Installer revenue share by plan ──────────────────────────────────────
+  installerShareFree       Float @default(0.15) // 15% — Free plan
+  installerSharePro        Float @default(0.25) // 25% — Pro plan
+  installerShareEnterprise Float @default(0.30) // 30% — Enterprise plan
+
+  // ── Installer success fee by plan (on each job) ───────────────────────────
+  successFeeFree       Float @default(0.10) // 10%
+  successFeePro        Float @default(0.07) // 7%
+  successFeeEnterprise Float @default(0.05) // 5%
+
+  // ── Installer membership (monthly SaaS fee) ───────────────────────────────
+  membershipFeeFree       Float @default(0) // $0
+  membershipFeePro        Float @default(99) // $99/mo
+  membershipFeeEnterprise Float @default(499) // $499/mo
+
+  // ── Credit economics ──────────────────────────────────────────────────────
+  creditsPerDollar            Int   @default(1000) // 1,000 credits = $1.00
+  homeownerReferralCredits    Int   @default(2500) // one-time credit award per successful referral (= $2.50)
+  monthlyRedemptionCapCredits Int   @default(2500) // max credits redeemable toward subscription per month (= $2.50)
+  monthlyRedemptionCapDollars Float @default(2.50) // mirrors the cap above in dollars for display/validation
+
+  // ── Grid Fund donation ─────────────────────────────────────────────────────
+  // ── Installer lead success fees (tiered by plan, admin-adjustable) ──────────
+  leadSuccessFeeFree         Float @default(0.10) // 10% — Free plan
+  leadSuccessFeePro          Float @default(0.07) // 7%  — Pro plan
+  leadSuccessFeeEnterprise   Float @default(0.05) // 5%  — Enterprise plan
+  // Donations are sourced from the cash wallet (VPP earnings), NOT Credits.
+  // The homeowner earns gridFundDonationBonusPct of the donated dollar value
+  // back as GridGuide Credits (converted at creditsPerDollar).
+  gridFundDonationMinDollars Float @default(1.00) // $1.00 minimum per donation
+  gridFundDonationBonusPct   Float @default(0.10) // 10% of donated $ value, paid back in credits
+
+  // ── Community Impact page (public, GridGuideEnergy marketing site) ─────────
+  publicDonationCounterEnabled Boolean  @default(true)
+  donationDisplayMode          String   @default("campaign") // "lifetime" | "campaign"
+  communityGoalLabel           String   @default("Community Donation Goal")
+  communityGoalTargetAmount    Float    @default(100000)
+  communityGoalStartDate       DateTime @default(now()) // campaign totals only count donations after this date; reset by updating this
+  // @deprecated — superseded by the dollar-based fields above; retained for
+  // historical data only, do not use in new code.
+  gridFundDonationMinCredits   Int      @default(1000)
+  gridFundDonationBonusCredits Int      @default(25)
+
+  // ── Homeowner subscription pricing (admin adjustable) ─────────────────────
+  homeownerSubscriptionPrice Float @default(9.99) // monthly price for GridGuide Pro (homeowner) — legacy
+
+  // ── Subscription pricing — all 4 prices for accurate commission calculation ──
+  plusMonthly Float @default(9.99) // Plus monthly billing price
+  plusAnnual  Float @default(8.29) // Plus annual billing (monthly equivalent)
+  proMonthly  Float @default(19.99) // Pro monthly billing price
+  proAnnual   Float @default(16.59) // Pro annual billing (monthly equivalent)
+
+  // ── Membership mix assumptions — forecast/display only, never affects real payouts ──
+  pctPlus   Float @default(0.70) // forecast % of subs on Plus vs Pro
+  pctAnnual Float @default(0.30) // forecast % of subs on annual vs monthly
+
+  // ── VPP event revenue split, by installer plan tier ───────────────────────
+  // Each row totals 100%. Free installers get 0% — they still earn referral
+  // commission on the subscription itself, just not on VPP event payouts.
+  vppSplitFreeHomeowner Float @default(0.80) // 80%
+  vppSplitFreeGridguide Float @default(0.20) // 20%
+  vppSplitFreeInstaller Float @default(0.00) //  0%
+
+  vppSplitProHomeowner Float @default(0.75) // 75%
+  vppSplitProGridguide Float @default(0.20) // 20%
+  vppSplitProInstaller Float @default(0.05) //  5%
+
+  vppSplitEnterpriseHomeowner Float @default(0.75) // 75%
+  vppSplitEnterpriseGridguide Float @default(0.15) // 15%
+  vppSplitEnterpriseInstaller Float @default(0.10) // 10%
+
+  // ── Seller commission ─────────────────────────────────────────────────────
+  sellerCommissionFree Float @default(0.10) // 10%
+  sellerCommissionPro  Float @default(0.08) // 8%
+
+  // ── GridGuide platform fees ───────────────────────────────────────────────
+  marketplaceFee Float @default(0.03) // 3% on marketplace orders
+  withdrawalFee  Float @default(0.00) // $0 default
+
+  updatedAt DateTime @updatedAt
+  updatedBy String? // admin userId who last changed it
+}
+
+model CreditRedemption {
+  id                  String   @id @default(cuid())
+  userId              String
+  creditAccountId     String
+  periodMonth         Int
+  periodYear          Int
+  creditsRedeemed     Int
+  dollarValue         Float
+  appliedTo           String   @default("subscription")
+  stripeInvoiceItemId String?
+  status              String   @default("APPLIED")
+  createdAt           DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditAccount CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodMonth, periodYear])
+  @@index([userId])
+  @@index([periodYear, periodMonth])
+}
+
+enum FulfillmentStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+model SellerFulfillment {
+  id             String            @id @default(cuid())
+  orderId        String
+  sellerId       String
+  status         FulfillmentStatus @default(PENDING)
+  carrier        String?
+  trackingNumber String?
+  trackingUrl    String?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  cancelledAt    DateTime?
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, sellerId])
+  @@index([sellerId, status])
+  @@index([orderId])
+}
+
+model InstallerCustomerInvite {
+  id              String    @id @default(cuid())
+  installerId     String
+  email           String
+  firstName       String?
+  lastName        String?
+  phone           String?
+  address         String?
+  city            String?
+  state           String?
+  zip             String?
+  systemType      String?
+  batterySystem   Boolean   @default(false)
+  utility         String?
+  installDate     DateTime?
+  inviteToken     String    @unique @default(cuid())
+  status          String    @default("PENDING") // PENDING | SENT | OPENED | CLICKED | SIGNED_UP | SUBSCRIBED
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  acceptedAt      DateTime?
+  signedUpAt      DateTime?
+  subscribedAt    DateTime?
+  convertedUserId String? // set when they create an account
+  importBatchId   String?
+  campaignId      String?
+  sendAttempts    Int       @default(0)
+  lastAttemptAt   DateTime?
+  lastSendError   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  installer Installer             @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  batch     InstallerImportBatch? @relation(fields: [importBatchId], references: [id])
+  campaign  InstallerCampaign?    @relation(fields: [campaignId], references: [id])
+
+  @@index([installerId])
+  @@index([inviteToken])
+  @@index([email, installerId])
+  @@index([status])
+}
+
+model InstallerImportBatch {
+  id          String    @id @default(cuid())
+  installerId String
+  fileName    String?
+  totalRows   Int       @default(0)
+  imported    Int       @default(0)
+  skipped     Int       @default(0)
+  errors      Int       @default(0)
+  status      String    @default("PENDING") // PENDING | PROCESSING | COMPLETE | FAILED
+  errorLog    Json?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  installer Installer                 @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  invites   InstallerCustomerInvite[]
+
+  @@index([installerId])
+}
+
+model InstallerCampaign {
+  id          String         @id @default(cuid())
+  installerId String
+  name        String
+  subject     String
+  body        String?
+  status      CampaignStatus @default(DRAFT)
+  sentCount   Int            @default(0)
+  openCount   Int            @default(0)
+  clickCount  Int            @default(0)
+  signupCount Int            @default(0)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  failedCount Int            @default(0)
+  queuedAt    DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  installer Installer                 @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  invites   InstallerCustomerInvite[]
+
+  @@index([installerId])
+}
+
+model CreditAccount {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  balance          Int      @default(0) // current spendable credit balance
+  lifetimeEarned   Int      @default(0) // total credits ever earned
+  lifetimeRedeemed Int      @default(0) // total credits ever redeemed
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
+  redemptions  CreditRedemption[]
+
+  @@index([userId])
+}
+
+model CreditTransaction {
+  id              String   @id @default(cuid())
+  creditAccountId String
+  amount          Int // positive = earned, negative = redeemed
+  reason          String // "referral_signup" | "referral_subscribed" | "redemption" | "admin_adjustment" | "promo"
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  creditAccount CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
+
+  @@index([creditAccountId])
+  @@index([reason])
+}
+
+model RewardGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  rewardKey String // unique identifier for this reward event
+  credits   Int // credits awarded (for audit)
+  reason    String // matches CreditTransaction.reason
+  metadata  Json?
+  grantedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rewardKey]) // THE hard stop — DB-level uniqueness
+  @@index([userId])
+  @@index([rewardKey])
+}
+
+model InstallerCommissionLedger {
+  id                  String    @id @default(cuid())
+  installerId         String
+  installerReferralId String
+  periodMonth         Int
+  periodYear          Int
+  planAtBilling       String // FREE | PRO | ENTERPRISE — installer's plan THIS cycle
+  sharePctApplied     Float // the % actually used for this cycle's calculation
+  homeownerRevenue    Float // what the homeowner paid this cycle
+  commissionAmount    Float // homeownerRevenue * sharePctApplied
+  status              String    @default("PENDING") // PENDING | PAID | FAILED
+  paidAt              DateTime?
+  stripeTransferId    String?
+  createdAt           DateTime  @default(now())
+
+  installer Installer         @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  referral  InstallerReferral @relation(fields: [installerReferralId], references: [id], onDelete: Cascade)
+
+  @@unique([installerReferralId, periodMonth, periodYear]) // one commission row per referral per month
+  @@index([installerId])
+  @@index([periodYear, periodMonth])
+  @@index([status])
+}
+
+model EnterpriseRequest {
+  id            String    @id @default(cuid())
+  orgName       String
+  contactName   String
+  email         String
+  phone         String?
+  propertyCount Int?
+  orgType       String    @default("Property Management") // Property Management | HOA | Commercial Building | Municipality | School/Institution | Energy Consultant | Other
+  status        String    @default("pending") // pending | contacted | approved | rejected
+  notes         String?
+  createdAt     DateTime  @default(now())
+  reviewedAt    DateTime?
+  reviewedBy    String?
+
+  @@index([status])
+  @@index([email])
+}
+
+model EnterpriseOrg {
+  id                              String   @id @default(cuid())
+  name                            String
+  plan                            String   @default("ENTERPRISE_BASIC") // ENTERPRISE_BASIC | ENTERPRISE_PRO | ENTERPRISE_SCALE
+  contactName                     String
+  contactEmail                    String   @unique
+  contactPhone                    String?
+  ownerUserId                     String?  @unique
+  stripeCustomerId                String?
+  stripeSubscriptionId            String?
+  subscriptionStatus              String?
+  whiteLabelEnabled               Boolean  @default(false)
+  apiEnabled                      Boolean  @default(false)
+  sponsoredSeatLimit              Int      @default(0)
+  sponsorshipStripeSubscriptionId String?
+  sponsorshipStripeItemId         String?
+  billingCycle                    String   @default("MONTHLY") // MONTHLY | ANNUAL
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+
+  owner                  User?                             @relation(fields: [ownerUserId], references: [id])
+  properties             EnterpriseProperty[]
+  teamMembers            EnterpriseTeamMember[]
+  apiKeys                EnterpriseApiKey[]
+  auditLogs              EnterpriseAuditLog[]
+  revenueRules           VppRevenueRule[]
+  deviceLinkRequests     EnterpriseDeviceLinkRequest[]
+  homeownerInvites       EnterpriseHomeownerInvite[]
+  sponsorships           EnterpriseSponsorship[]
+  installerNetwork       EnterpriseInstallerNetwork[]
+  energyAssets           EnterpriseEnergyAsset[]
+  geothermalPpas         EnterpriseGeothermalPpa[]
+  sustainabilityReadings EnterpriseSustainabilityReading[]
+  importBatches          EnterpriseImportBatch[]
+  campaigns              EnterpriseCampaign[]
+
+  @@index([plan])
+}
+
+model EnterpriseProperty {
+  id               String   @id @default(cuid())
+  orgId            String
+  name             String
+  address          String?
+  type             String   @default("Residential") // Residential | Commercial | Mixed-Use | HOA | Municipal | School/Institution
+  units            Int      @default(0)
+  kw               Float    @default(0)
+  status           String   @default("pending") // pending | active | inactive
+  utilityAccountId String?
+  createdAt        DateTime @default(now())
+
+  org                    EnterpriseOrg                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  devices                Device[]
+  deviceLinkRequests     EnterpriseDeviceLinkRequest[]
+  energyAssets           EnterpriseEnergyAsset[]
+  geothermalPpas         EnterpriseGeothermalPpa[]
+  sustainabilityReadings EnterpriseSustainabilityReading[]
+
+  @@index([orgId])
+  @@index([status])
+}
+
+// Enterprise data-center and geothermal energy layer. String classifications
+// are intentional so new equipment and contract states can be introduced
+// without a PostgreSQL enum migration for every integration partner.
+model EnterpriseEnergyAsset {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  propertyId            String?
+  name                  String
+  type                  String // GEOTHERMAL_GENERATION | GROUND_SOURCE_HEAT_PUMP | THERMAL_STORAGE | BATTERY | UPS | CHILLER | GRID_CONNECTION | SOLAR
+  status                String    @default("PLANNED") // PLANNED | CONSTRUCTION | ACTIVE | INACTIVE | RETIRED
+  provider              String?
+  externalId            String?
+  ratedCapacityKw       Float?
+  thermalCapacityKwh    Float?
+  coolingType           String? // AIR | WATER | HYBRID | CLOSED_LOOP | GROUND_SOURCE | OTHER
+  waterSource           String? // MUNICIPAL | RECLAIMED | GROUNDWATER | SURFACE | CLOSED_LOOP | NONE | OTHER
+  commercialOperationAt DateTime?
+  metadata              Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  org      EnterpriseOrg                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty?               @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  ppas     EnterpriseGeothermalPpa[]
+  readings EnterpriseSustainabilityReading[]
+
+  @@unique([orgId, externalId])
+  @@index([orgId])
+  @@index([propertyId])
+  @@index([type])
+  @@index([status])
+}
+
+model EnterpriseGeothermalPpa {
+  id                  String    @id @default(cuid())
+  orgId               String
+  propertyId          String?
+  assetId             String?
+  name                String
+  seller              String
+  utility             String?
+  status              String    @default("PROPOSED") // PROPOSED | PENDING_APPROVAL | ACTIVE | EXPIRED | TERMINATED
+  contractedMw        Float
+  termYears           Int
+  capacityFactorPct   Float     @default(90)
+  pricePerMwh         Float?
+  annualEscalationPct Float?
+  signedAt            DateTime?
+  deliveryStartAt     DateTime?
+  deliveryEndAt       DateTime?
+  regulatoryApproval  String? // NOT_REQUIRED | PENDING | APPROVED | REJECTED
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  org      EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  asset    EnterpriseEnergyAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([propertyId])
+  @@index([assetId])
+  @@index([status])
+}
+
+model EnterpriseSustainabilityReading {
+  id                           String   @id @default(cuid())
+  orgId                        String
+  propertyId                   String
+  assetId                      String?
+  recordedAt                   DateTime
+  intervalMinutes              Int      @default(60)
+  facilityEnergyKwh            Float    @default(0)
+  itEnergyKwh                  Float    @default(0)
+  geothermalDeliveredKwh       Float    @default(0)
+  gridEnergyKwh                Float    @default(0)
+  coolingEnergyKwh             Float    @default(0)
+  waterWithdrawnGallons        Float    @default(0)
+  waterConsumedGallons         Float    @default(0)
+  baselineWaterConsumedGallons Float    @default(0)
+  waterRecycledGallons         Float    @default(0)
+  carbonAvoidedKg              Float    @default(0)
+  source                       String   @default("MANUAL") // MANUAL | CSV | API | METER | DCIM | BMS
+  externalId                   String?
+  metadata                     Json?
+  createdAt                    DateTime @default(now())
+
+  org      EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  asset    EnterpriseEnergyAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, source, externalId])
+  @@index([orgId, recordedAt])
+  @@index([propertyId, recordedAt])
+  @@index([assetId, recordedAt])
+}
+
+model EnterpriseHomeownerInvite {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  email                 String
+  firstName             String?
+  lastName              String?
+  phone                 String?
+  address               String?
+  city                  String?
+  state                 String?
+  zip                   String?
+  systemType            String?
+  batterySystem         Boolean   @default(false)
+  utility               String?
+  propertyId            String?
+  homeownerUserId       String?
+  invitedByUserId       String
+  invitedViaInstallerId String?
+  importBatchId         String?
+  campaignId            String?
+  status                String    @default("PENDING")
+  token                 String    @unique
+  sentAt                DateTime?
+  openedAt              DateTime?
+  clickedAt             DateTime?
+  signedUpAt            DateTime?
+  subscribedAt          DateTime?
+  sendAttempts          Int       @default(0)
+  lastAttemptAt         DateTime?
+  lastSendError         String?
+  createdAt             DateTime  @default(now())
+  expiresAt             DateTime
+  respondedAt           DateTime?
+
+  org       EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  installer Installer?             @relation(fields: [invitedViaInstallerId], references: [id], onDelete: SetNull)
+  batch     EnterpriseImportBatch? @relation(fields: [importBatchId], references: [id])
+  campaign  EnterpriseCampaign?    @relation(fields: [campaignId], references: [id])
+
+  @@index([orgId])
+  @@index([email])
+  @@index([homeownerUserId])
+  @@index([status])
+  @@index([importBatchId])
+}
+
+model EnterpriseSponsorship {
+  id                String    @id @default(cuid())
+  orgId             String
+  userId            String    @unique
+  plan              String // "HOMEOWNER_PLUS" | "HOMEOWNER_PREMIUM"
+  status            String    @default("ACTIVE") // ACTIVE | PAUSED | ENDED
+  startedAt         DateTime  @default(now())
+  endedAt           DateTime?
+  gracePeriodEndsAt DateTime?
+
+  org  EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([status])
+}
+
+model EnterpriseInstallerNetwork {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  installerId           String
+  status                String    @default("INVITED")
+  invitedAt             DateTime  @default(now())
+  installerRespondedAt  DateTime?
+  adminApprovedByUserId String?
+  adminApprovedAt       DateTime?
+
+  org       EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  installer Installer     @relation(fields: [installerId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, installerId])
+  @@index([orgId])
+  @@index([installerId])
+  @@index([status])
+}
+
+model PlatformAuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorRole   String?
+  action      String
+  targetType  String?
+  targetId    String?
+  orgId       String?
+  category    String // BILLING | ASSIGNMENT | REFERRAL | TEAM | VPP | OTHER
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([orgId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([category])
+}
+
+model EnterpriseDeviceLinkRequest {
+  id                String    @id @default(cuid())
+  orgId             String
+  propertyId        String
+  homeownerEmail    String // captured at request time
+  homeownerUserId   String? // resolved once matched to a real account
+  deviceId          String? // set once a device is chosen (by homeowner or admin)
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  requestedByUserId String // the enterprise admin who initiated this
+  resolvedByUserId  String? // homeowner or platform admin who resolved it
+  resolvedByRole    String? // "HOMEOWNER" | "PLATFORM_ADMIN"
+  createdAt         DateTime  @default(now())
+  resolvedAt        DateTime?
+
+  org      EnterpriseOrg      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([homeownerEmail])
+  @@index([homeownerUserId])
+  @@index([status])
+}
+
+model EnterpriseTeamMember {
+  id              String    @id @default(cuid())
+  orgId           String
+  name            String
+  email           String
+  role            String    @default("Manager") // Owner | Admin | Manager | Viewer
+  department      String?
+  userId          String? // set once the invited person accepts and has a real login
+  status          String    @default("PENDING") // PENDING | ACTIVE | REVOKED
+  inviteToken     String?   @unique
+  inviteExpiresAt DateTime?
+  invitedAt       DateTime  @default(now())
+  acceptedAt      DateTime?
+
+  org  EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@index([userId])
+  @@index([inviteToken])
+}
+
+model EnterpriseApiKey {
+  id         String    @id @default(cuid())
+  orgId      String
+  keyPrefix  String // first 8 chars shown in UI, full key hashed
+  keyHash    String
+  label      String?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  org EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model EnterpriseAuditLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String?
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  org EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([createdAt])
+}
+
+model JobApplication {
+  id          String   @id @default(cuid())
+  role        String // job title applied for, or "Open Application"
+  name        String
+  email       String
+  phone       String?
+  linkedin    String? // LinkedIn profile URL
+  resumeUrl   String? // uploaded resume link (S3/Cloudflare)
+  coverLetter String? // free-text cover letter
+  source      String? // how they heard about GridGuide
+  status      String   @default("NEW") // NEW | REVIEWING | INTERVIEW | OFFER | REJECTED | WITHDRAWN
+  notes       String? // internal admin notes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([role])
+  @@index([createdAt])
+}
+
+model EnterpriseImportBatch {
+  id          String    @id @default(cuid())
+  orgId       String
+  fileName    String?
+  totalRows   Int       @default(0)
+  imported    Int       @default(0)
+  skipped     Int       @default(0)
+  errors      Int       @default(0)
+  status      String    @default("PENDING") // PENDING | PROCESSING | COMPLETE | FAILED
+  errorLog    Json?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  org     EnterpriseOrg               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invites EnterpriseHomeownerInvite[]
+
+  @@index([orgId])
+}
+
+model EnterpriseCampaign {
+  id          String         @id @default(cuid())
+  orgId       String
+  name        String
+  subject     String
+  body        String?
+  status      CampaignStatus @default(DRAFT)
+  sentCount   Int            @default(0)
+  openCount   Int            @default(0)
+  clickCount  Int            @default(0)
+  signupCount Int            @default(0)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  failedCount Int            @default(0)
+  queuedAt    DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  org     EnterpriseOrg               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invites EnterpriseHomeownerInvite[]
+
+  @@index([orgId])
+}
+
+// ── Email suppression list ────────────────────────────────────────────────────
+model EmailSuppression {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String // UNSUBSCRIBE | BOUNCE | COMPLAINT | ADMIN | EXPIRED
+  source    String? // installer-invite | enterprise-invite | marketing | webhook
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+}
+
+// ── Per-email unsubscribe tokens ──────────────────────────────────────────────
+model UnsubscribeToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique @default(cuid())
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+}
+
+// ── Durable delivery job — replaces inline HTTP send loop ────────────────────
+model InvitationDeliveryJob {
+  id             String    @id @default(cuid())
+  invitationType String // INSTALLER | ENTERPRISE_HOMEOWNER | SELLER_MESSAGE | SELLER_TEAM_INVITE | PARTNER_INVITATION
+  invitationId   String // InstallerCustomerInvite.id or EnterpriseHomeownerInvite.id
+  campaignId     String? // null for standalone invites
+  recipientEmail String
+  status         String    @default("PENDING") // PENDING|QUEUED|SENDING|SENT|FAILED|SKIPPED|SUPPRESSED
+  attempts       Int       @default(0)
+  lastError      String?
+  providerId     String? // provider message-id for dedup/tracking
+  availableAt    DateTime  @default(now())
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Unique only when campaignId is set; standalone jobs use invitationId alone
+  @@index([invitationType, invitationId, campaignId])
+  @@index([status, availableAt])
+  @@index([campaignId])
+  @@index([recipientEmail])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SELLER COMMUNICATION SYSTEM — Phase 1 + 2
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum SellerCampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  SENDING
+  SENT
+  PARTIAL
+  FAILED
+  PAUSED
+  CANCELLED
+}
+
+enum SellerMessageType {
+  ORDER_CONFIRMATION
+  PAYMENT_RECEIVED
+  ORDER_PROCESSING
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  RETURN_AUTHORIZED
+  REFUND_ISSUED
+  REVIEW_REQUEST
+  PRODUCT_ANNOUNCEMENT
+  PROMOTIONAL_CAMPAIGN
+  BACK_IN_STOCK
+  PRICE_DROP
+  QUOTE
+  SUPPORT
+  TEAM_INVITE
+}
+
+// ── Seller customers with consent tracking ────────────────────────────────────
+model SellerCustomer {
+  id                         String    @id @default(cuid())
+  sellerId                   String
+  userId                     String? // null = non-GridGuide customer
+  email                      String
+  firstName                  String?
+  lastName                   String?
+  phone                      String?
+  address                    String?
+  city                       String?
+  state                      String?
+  zip                        String?
+  marketingOptIn             Boolean   @default(false)
+  marketingOptInAt           DateTime?
+  marketingOptOutAt          DateTime?
+  source                     String? // marketplace | import | manual | referral
+  totalOrders                Int       @default(0)
+  lifetimeValue              Float     @default(0)
+  lastOrderAt                DateTime?
+  lastContactAt              DateTime?
+  notes                      String?
+  // Consent evidence — required for compliance
+  marketingConsentSource     String? // web-form | import | checkout | manual
+  marketingConsentText       String? // exact consent language shown to customer
+  marketingConsentIp         String?
+  marketingConsentRecordedBy String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  seller    Seller                    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  campaigns SellerCampaignRecipient[]
+  quotes    SellerQuote[]
+  messages  SellerMessageLog[]
+
+  @@unique([sellerId, email])
+  @@index([sellerId, marketingOptIn])
+  @@index([sellerId, lastOrderAt])
+}
+
+// ── Seller campaigns ──────────────────────────────────────────────────────────
+model SellerCampaign {
+  id              String               @id @default(cuid())
+  sellerId        String
+  createdByUserId String
+  name            String
+  subject         String
+  bodyHtml        String
+  bodyText        String?
+  type            String               @default("PROMOTIONAL_CAMPAIGN")
+  status          SellerCampaignStatus @default(DRAFT)
+  segmentJson     Json?
+  scheduledAt     DateTime?
+  queuedAt        DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  sentAt          DateTime?
+  failedAt        DateTime?
+  recipientCount  Int                  @default(0)
+  sentCount       Int                  @default(0)
+  openedCount     Int                  @default(0)
+  clickedCount    Int                  @default(0)
+  convertedCount  Int                  @default(0)
+  failedCount     Int                  @default(0)
+  suppressedCount Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  seller      Seller                     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  recipients  SellerCampaignRecipient[]
+  conversions SellerCampaignConversion[]
+
+  @@index([sellerId, status])
+  @@index([scheduledAt, status])
+}
+
+model SellerCampaignRecipient {
+  id             String    @id @default(cuid())
+  campaignId     String
+  customerId     String?
+  email          String
+  firstName      String?
+  lastName       String?
+  status         String    @default("PENDING")
+  queuedAt       DateTime?
+  sentAt         DateTime?
+  openedAt       DateTime?
+  clickedAt      DateTime?
+  convertedAt    DateTime?
+  failedAt       DateTime?
+  sendAttempts   Int       @default(0)
+  lastAttemptAt  DateTime?
+  lastSendError  String?
+  providerId     String?
+  unsubscribeKey String?   @unique @default(cuid())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  campaign         SellerCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  SellerCustomer   SellerCustomer? @relation(fields: [sellerCustomerId], references: [id])
+  sellerCustomerId String?
+
+  @@unique([campaignId, email])
+  @@index([campaignId, status])
+  @@index([email])
+}
+
+model SellerCampaignConversion {
+  id           String   @id @default(cuid())
+  campaignId   String
+  recipientId  String
+  orderId      String
+  revenue      Float
+  attributedAt DateTime @default(now())
+  method       String   @default("LAST_CLICK")
+
+  campaign SellerCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, orderId])
+  @@index([campaignId, attributedAt])
+}
+
+// ── Message log — all seller outbound comms ───────────────────────────────────
+model SellerMessageLog {
+  id              String            @id @default(cuid())
+  sellerId        String
+  customerId      String?
+  orderId         String?
+  quoteId         String?
+  campaignId      String?
+  type            SellerMessageType
+  toEmail         String
+  subject         String
+  providerId      String?
+  status          String            @default("PENDING")
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  failedAt        DateTime?
+  errorMessage    String?
+  createdByUserId String?
+  createdAt       DateTime          @default(now())
+
+  seller   Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  customer SellerCustomer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, toEmail])
+  @@index([orderId])
+  @@index([campaignId])
+  @@index([sellerId, type])
+}
+
+// ── Quotes and proposals ──────────────────────────────────────────────────────
+model SellerQuote {
+  id               String    @id @default(cuid())
+  sellerId         String
+  customerId       String?
+  createdByUserId  String
+  quoteNumber      String    @unique
+  status           String    @default("DRAFT") // DRAFT|SENT|VIEWED|ACCEPTED|DECLINED|EXPIRED
+  subtotal         Float     @default(0)
+  discountAmount   Float     @default(0)
+  taxAmount        Float     @default(0)
+  shippingAmount   Float     @default(0)
+  total            Float     @default(0)
+  expiresAt        DateTime?
+  sentAt           DateTime?
+  viewedAt         DateTime?
+  acceptedAt       DateTime?
+  declinedAt       DateTime?
+  convertedOrderId String?
+  notes            String?
+  lineItemsJson    Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  seller   Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  customer SellerCustomer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, status])
+  @@index([sellerId, createdAt])
+}
+
+// ── Team invitations ──────────────────────────────────────────────────────────
+model SellerTeamInvite {
+  id            String         @id @default(cuid())
+  sellerId      String
+  email         String
+  role          SellerTeamRole @default(VIEWER)
+  token         String         @unique @default(cuid())
+  status        String         @default("PENDING") // PENDING|ACCEPTED|DECLINED|EXPIRED
+  expiresAt     DateTime
+  sentAt        DateTime?
+  acceptedAt    DateTime?
+  sendAttempts  Int            @default(0)
+  lastAttemptAt DateTime?
+  lastSendError String?
+  providerId    String?
+  createdById   String
+  createdAt     DateTime       @default(now())
+
+  @@unique([sellerId, email])
+  @@index([sellerId, status])
+  @@index([token])
+}
+
+// ── Admin communication policy ────────────────────────────────────────────────
+model SellerCommunicationPolicy {
+  id                        String   @id @default("singleton")
+  campaignsEnabled          Boolean  @default(true)
+  freeMonthlyRecipientLimit Int      @default(0)
+  proMonthlyRecipientLimit  Int      @default(5000)
+  enterpriseRecipientLimit  Int?
+  maxDailyRecipients        Int      @default(1000)
+  requireVerifiedSender     Boolean  @default(true)
+  reviewFlaggedCampaigns    Boolean  @default(true)
+  updatedAt                 DateTime @updatedAt
+}
+
+// ── Shared campaign status enum ───────────────────────────────────────────────
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  SENDING
+  SENT
+  PARTIAL
+  FAILED
+  PAUSED
+  CANCELLED
+}
+
+// ── Seller team membership ────────────────────────────────────────────────────
+enum SellerTeamRole {
+  OWNER
+  MANAGER
+  SUPPORT
+  VIEWER
+}
+
+model SellerTeamMember {
+  id        String         @id @default(cuid())
+  sellerId  String
+  userId    String
+  role      SellerTeamRole
+  status    String         @default("ACTIVE") // ACTIVE | SUSPENDED
+  joinedAt  DateTime       @default(now())
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, userId])
+  @@index([sellerId, role])
+}
+
+// ─── Partner Invitation System ────────────────────────────────────────────────
+// Admin-controlled onboarding of installer companies, enterprise orgs, sellers.
+// Separate from InstallerCustomerInvite / EnterpriseHomeownerInvite / SellerTeamInvite.
+
+enum PartnerInvitationType {
+  INSTALLER
+  ENTERPRISE
+  SELLER
+}
+
+enum PartnerInvitationStatus {
+  DRAFT
+  SENT
+  OPENED
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+  APPROVED
+  REJECTED
+}
+
+model PartnerInvitation {
+  id     String                  @id @default(cuid())
+  type   PartnerInvitationType
+  status PartnerInvitationStatus @default(DRAFT)
+
+  // Contact
+  email       String
+  contactName String?
+  companyName String
+  phone       String?
+  website     String?
+
+  // Commercial config assigned by admin at invite time
+  assignedPlan      String?
+  commissionRate    Float?
+  successFeeRate    Float?
+  subscriptionShare Float?
+  vppInstallerShare Float?
+
+  // Seller-only onboarding config
+  marketplaceCategory    String?
+  shippingRequired       Boolean @default(false)
+  stripeConnectRequired  Boolean @default(true)
+  taxInfoRequired        Boolean @default(true)
+  sellerAgreementVersion String?
+
+  // Enterprise-only onboarding config
+  expectedPropertyCount Int?
+  sponsoredHomeowners   Boolean @default(false)
+
+  // Installer-only onboarding config
+  serviceStates   String[]
+  licenseRequired Boolean  @default(true)
+
+  // Token lifecycle
+  token       String    @unique @default(cuid())
+  expiresAt   DateTime
+  sentAt      DateTime?
+  openedAt    DateTime?
+  acceptedAt  DateTime?
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  cancelledAt DateTime?
+
+  // Delivery tracking
+  resendCount   Int       @default(0)
+  lastSentAt    DateTime?
+  lastSendError String?
+
+  // Actor references (string IDs only — no hard FK until schema review)
+  invitedByUserId  String
+  acceptedByUserId String?
+  approvedByUserId String?
+
+  // Linked records after approval
+  installerId     String?
+  enterpriseOrgId String?
+  sellerId        String?
+
+  internalNote String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([type, status])
+  @@index([email])
+  @@index([companyName])
+  @@index([expiresAt])
+  @@index([invitedByUserId])
+}
