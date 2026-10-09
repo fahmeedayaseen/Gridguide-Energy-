@@ -20,6 +20,11 @@ const REQUIRED = [
   "CRON_SECRET",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  // Required, not just recommended: logout revocation and rate limiting only
+  // work across instances with a shared Redis (see lib/redis.js).
+  "REDIS_URL",
+  // Withdrawal bank details are encrypted with this; withdrawals fail closed without it.
+  "PAYOUT_ENCRYPTION_KEY",
 ];
 
 const REQUIRED_FOR_PAID_PLANS = [
@@ -46,7 +51,6 @@ const REQUIRED_FOR_ENTERPRISE_BILLING = [
 
 const RECOMMENDED = [
   "SENDGRID_API_KEY", "FROM_EMAIL",
-  "REDIS_URL",
   "ANTHROPIC_API_KEY",
   "SENTRY_DSN",
   "NEXT_PUBLIC_MAPBOX_TOKEN", "GOOGLE_MAPS_API_KEY",

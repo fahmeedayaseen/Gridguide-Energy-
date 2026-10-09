@@ -1104,33 +1104,77 @@ model Wallet {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id])
-  withdrawals Withdrawal[]
+  user         User                @relation(fields: [userId], references: [id])
+  withdrawals  Withdrawal[]
+  transactions WalletTransaction[]
 
   @@index([userId])
 }
 
+// Wallet semantics: `balance` is what the user can spend or withdraw right now.
+// A withdrawal moves money out of `balance` into `pendingWithdrawals` until an
+// admin marks it COMPLETED (pending cleared) or FAILED/CANCELLED (returned to balance).
 model Withdrawal {
-  id             String   @id @default(cuid())
-  userId         String
-  walletId       String
-  method         String // ach | paypal | check | wire
-  grossAmount    Float
-  fee            Float    @default(0)
-  netAmount      Float
-  status         String   @default("PROCESSING") // PROCESSING | COMPLETED | FAILED | CANCELLED
-  processingTime String?
-  destination    String? // masked destination description
-  routingLast4   String?
-  accountLast4   String?
-  stripePayoutId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  userId               String
+  walletId             String
+  method               String // ach | check | wire
+  grossAmount          Float
+  fee                  Float     @default(0)
+  netAmount            Float
+  // PENDING_REVIEW -> PROCESSING -> COMPLETED
+  //                \-> CANCELLED (user/admin, funds returned)
+  // PROCESSING     -> FAILED (funds returned)
+  status               String    @default("PENDING_REVIEW")
+  processingTime       String?
+  destination          String? // masked destination description, safe to display
+  routingLast4         String?
+  accountLast4         String?
+  // Full payout details (routing/account/name), AES-256-GCM encrypted with
+  // PAYOUT_ENCRYPTION_KEY. Only decrypted by an admin executing the payout
+  // (audit-logged), and wiped once the withdrawal reaches a final state.
+  encryptedDestination String?
+  externalReference    String? // bank trace / check number / wire reference entered by admin
+  stripePayoutId       String?
+  failureReason        String?
+  reviewedById         String?
+  approvedAt           DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user   User   @relation(fields: [userId], references: [id])
   wallet Wallet @relation(fields: [walletId], references: [id])
 
   @@index([userId])
+  @@index([status])
+}
+
+// Append-only record of every cash wallet movement. Money-moving flows that
+// touch an external system (Stripe) are two-phase: the debit and a PENDING
+// row are written in one DB transaction, then the external call runs, then
+// the row becomes COMPLETED — or REVERSED with the debit refunded. A PENDING
+// row older than a few minutes means the process died mid-flight;
+// reconcilePendingWalletTransactions() in lib/wallet.js resolves it.
+model WalletTransaction {
+  id             String   @id @default(cuid())
+  walletId       String
+  userId         String
+  type           String // SUBSCRIPTION_CREDIT | GRID_FUND_DONATION | WITHDRAWAL | WITHDRAWAL_RETURN | DEPOSIT
+  amount         Float // signed: negative leaves the wallet, positive enters it
+  status         String   @default("COMPLETED") // PENDING | COMPLETED | REVERSED
+  idempotencyKey String?  @unique
+  externalRef    String? // e.g. Stripe customer balance transaction id
+  failureReason  String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([status, createdAt])
 }
 
 model GridFundDonation {
