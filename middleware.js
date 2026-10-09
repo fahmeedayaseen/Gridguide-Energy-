@@ -46,7 +46,13 @@ const PUBLIC_ROUTES = [
   // inside each handler (see lib/secrets.js — fails closed in production if the
   // relevant secret is unset, it does NOT fall back to accepting the request).
   { path: "/api/cron", methods: ["GET", "POST"] },
-  { path: "/api/cron/installer-commissions", methods: ["POST"] },
+  { path: "/api/cron/installer-commissions", methods: ["GET", "POST"] },
+  // Vercel Cron calls these with GET and no user session. Without these
+  // entries middleware returned 401 before the handler's CRON_SECRET check
+  // ever ran, so the scheduled jobs in vercel.json never executed.
+  { path: "/api/cron/process-delivery-jobs", methods: ["GET", "POST"] },
+  { path: "/api/cron/invitation-campaigns", methods: ["GET", "POST"] },
+  { path: "/api/cron/wallet-reconcile", methods: ["GET", "POST"] },
   { path: "/api/vpp/webhooks", methods: ["POST"], matchChildren: true },
 
   // OAuth callbacks — hit by an external redirect (UtilityAPI, Ecobee, Google

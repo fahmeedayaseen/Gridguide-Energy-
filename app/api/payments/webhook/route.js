@@ -34,11 +34,19 @@ export async function POST(request) {
   const body      = await request.text();
   const signature = headers().get("stripe-signature");
 
+  // Fail closed: no secret configured = no event is trusted, on any environment.
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("[Stripe webhook] STRIPE_WEBHOOK_SECRET is not set — rejecting event.");
+    return err("Webhook not configured", 500);
+  }
+  if (!signature) return err("Missing Stripe signature", 400);
+
   let event;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (e) {
-    return err(`Webhook signature failed: ${e.message}`, 400);
+    return err("Webhook signature verification failed", 400);
   }
 
   const cfg = await getPlatformConfig();
