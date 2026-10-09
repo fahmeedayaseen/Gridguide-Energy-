@@ -3,10 +3,13 @@ import { prisma } from "@/lib/db.js";
 import { ok, err } from "@/lib/auth.js";
 import { getProviderEnv, normalizeProviderKey } from "@/lib/vpp-partners.js";
 import { settleVppEventBatch, recomputeEventGrossRevenue } from "@/lib/vpp-settlement.js";
-import { IS_PROD } from "@/lib/secrets.js";
+import { insecureDevBypassEnabled } from "@/lib/secrets.js";
 
 function validSignature(raw, signature, secret) {
-  if (!secret) return !IS_PROD; // only reachable in development — production requires a configured secret
+  // Fail closed on every deployed environment (Audit §5 M1): a missing secret
+  // rejects the webhook unless a developer explicitly enabled the local-only
+  // bypass (ALLOW_INSECURE_DEV_SECRETS=true, ignored in production).
+  if (!secret) return insecureDevBypassEnabled();
   if (!signature) return false;
   const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
   const provided = String(signature || "").replace(/^sha256=/, "");

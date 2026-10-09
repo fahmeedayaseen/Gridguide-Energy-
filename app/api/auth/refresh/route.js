@@ -1,25 +1,20 @@
 import { prisma } from "@/lib/db.js";
-import { ok, err, setTokenCookies } from "@/lib/auth.js";
-import { verifyRefreshToken, signAccessToken } from "@/lib/jwt.js";
+import { ok, err } from "@/lib/auth.js";
+import { verifyRefreshToken, signAccessToken, extractRefreshToken } from "@/lib/jwt.js";
 import { isBlacklisted } from "@/lib/redis.js";
 
 export async function POST(request) {
-  // Pull refresh token from cookie
-  const cookies = request.headers.get("cookie") || "";
-  const match   = cookies.match(/refresh_token=([^;]+)/);
-  const token   = match?.[1];
-
+  const token = extractRefreshToken(request);
   if (!token) return err("No refresh token", 401);
 
-  // Check blacklist
+  // Revoked at logout?
   if (await isBlacklisted(token)) return err("Token revoked", 401);
 
-  let decoded;
-  try {
-    decoded = verifyRefreshToken(token);
-  } catch {
-    return err("Invalid or expired refresh token", 401);
-  }
+  // verifyRefreshToken returns null (it does not throw) on a bad signature,
+  // expiry, or a non-refresh token type. The previous try/catch never caught
+  // anything, so an invalid token crashed on decoded.sub with a 500.
+  const decoded = verifyRefreshToken(token);
+  if (!decoded?.sub) return err("Invalid or expired refresh token", 401);
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.sub },
@@ -35,7 +30,7 @@ export async function POST(request) {
   // Set new access token cookie only (keep existing refresh token)
   response.headers.set(
     "Set-Cookie",
-    `access_token=${accessToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=900${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+    `access_token=${accessToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=900${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
   );
   return response;
 }

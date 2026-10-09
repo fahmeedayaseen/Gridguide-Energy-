@@ -5,7 +5,7 @@
  * Uses the Web Crypto API (available on Edge) for JWT verification.
  *
  * This verifies the JWT signature and expiry without touching the database.
- * Full user validation (role checks, blacklist) is done inside each API route
+ * Logout revocation (Redis) and role checks are done inside each API route
  * using lib/jwt.js's authenticateRequest()/requireRole(), which run in the
  * Node.js serverless runtime and trust the x-user-* headers set below.
  *
@@ -46,7 +46,13 @@ const PUBLIC_ROUTES = [
   // inside each handler (see lib/secrets.js — fails closed in production if the
   // relevant secret is unset, it does NOT fall back to accepting the request).
   { path: "/api/cron", methods: ["GET", "POST"] },
-  { path: "/api/cron/installer-commissions", methods: ["POST"] },
+  { path: "/api/cron/installer-commissions", methods: ["GET", "POST"] },
+  // Vercel Cron calls these with GET and no user session. Without these
+  // entries middleware returned 401 before the handler's CRON_SECRET check
+  // ever ran, so the scheduled jobs in vercel.json never executed.
+  { path: "/api/cron/process-delivery-jobs", methods: ["GET", "POST"] },
+  { path: "/api/cron/invitation-campaigns", methods: ["GET", "POST"] },
+  { path: "/api/cron/wallet-reconcile", methods: ["GET", "POST"] },
   { path: "/api/vpp/webhooks", methods: ["POST"], matchChildren: true },
 
   // OAuth callbacks — hit by an external redirect (UtilityAPI, Ecobee, Google
@@ -193,8 +199,17 @@ async function verifyJwtEdge(token) {
       new TextDecoder().decode(base64UrlDecode(payloadB64))
     );
 
-    // Check expiry
-    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    // Check expiry. Tokens without exp are rejected — every token GridGuide
+    // issues has one, so a missing exp means it wasn't issued by us.
+    if (!payload.exp || Date.now() / 1000 > payload.exp) return null;
+
+    // Never accept a refresh token as an access token (relevant whenever
+    // JWT_REFRESH_SECRET is unset and falls back to JWT_SECRET).
+    if (payload.typ === "refresh") return null;
+
+    // Only HS256 is accepted.
+    const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(headerB64)));
+    if (header.alg !== "HS256") return null;
 
     return payload;
   } catch {

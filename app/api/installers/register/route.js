@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getInstallerSuccessFeeRate } from "@/lib/platform-config.js";
 
 const installerRegisterSchema = z.object({
   companyName:     z.string().min(2).max(200),
@@ -21,7 +22,6 @@ const installerRegisterSchema = z.object({
   backgroundAuth:  z.string().url().optional(),
 });
 
-const SUCCESS_FEES = { FREE: 0.10, PRO: 0.07, ENTERPRISE: 0.05 };
 
 export async function GET(request) {
   const auth = await authenticateRequest(request);
@@ -51,7 +51,7 @@ export async function POST(request) {
       nabcepCertified:   data.nabcepCertified,
       verificationStatus: "PENDING",
       plan:              data.plan,
-      successFeeRate:    SUCCESS_FEES[data.plan],
+      successFeeRate:    await getInstallerSuccessFeeRate(data.plan),
       serviceAreas:      data.serviceAreas,
       specialties:       data.specialties,
     },

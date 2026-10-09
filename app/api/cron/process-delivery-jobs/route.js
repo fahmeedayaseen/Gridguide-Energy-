@@ -8,6 +8,7 @@
  */
 import { prisma }                                   from "@/lib/db.js";
 import { isSuppressed }                             from "@/lib/suppression.js";
+import { verifyCronRequest } from "@/lib/secrets.js";
 import { sendInstallerInvite, sendHomeownerInvite,
          sendEmail }                                from "@/lib/email.js";
 
@@ -15,7 +16,9 @@ const MAX_ATTEMPTS = 3;
 const BATCH_SIZE   = 100;
 
 export async function POST(request) {
-  if (request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Rejects when CRON_SECRET is unset. The old check compared against
+  // `Bearer ${undefined}`, so an unset secret accepted "Bearer undefined".
+  if (!verifyCronRequest(request)) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -377,3 +380,7 @@ export async function POST(request) {
 
   return Response.json({ processed: jobs.length, sent, failed, skipped });
 }
+
+// Vercel Cron invokes scheduled paths with GET (see vercel.json). Exporting
+// only POST meant this job returned 405 and never ran on schedule.
+export const GET = POST;

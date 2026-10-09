@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Validate, migrate, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gridguide_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gridguide_ci
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: .github/scripts/step.sh "npm ci" npm ci --no-audit --no-fund
+
+      - name: Prisma schema validates
+        run: .github/scripts/step.sh "prisma validate" npx prisma validate
+
+      - name: Migrations apply cleanly to an empty database
+        run: .github/scripts/step.sh "prisma migrate deploy" npx prisma migrate deploy
+
+      - name: Migrated database matches schema.prisma exactly (no drift)
+        run: .github/scripts/step.sh "migration drift check" npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
+      - name: Unit and integration tests
+        run: .github/scripts/step.sh "tests" npm test
+
+      - name: Production build
+        env:
+          # Placeholder values so modules that fail fast on missing secrets can
+          # load during `next build`. No real credentials are used in CI.
+          JWT_SECRET: ci-only-access-secret
+          JWT_REFRESH_SECRET: ci-only-refresh-secret
+          CRON_SECRET: ci-only-cron-secret
+          STRIPE_SECRET_KEY: sk_test_ci_placeholder
+          STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+          PAYOUT_ENCRYPTION_KEY: Y2ktb25seS1wbGFjZWhvbGRlci1rZXktMzJieXRlcyE=
+        run: .github/scripts/step.sh "next build" npm run build

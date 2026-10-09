@@ -636,7 +636,7 @@ function EnergyHome({nav}) {
           </div>
           <div style={{textAlign:"center",padding:"28px 20px",background:C.navyMid,borderRadius:14,border:`1px solid ${C.navyBord}`}}>
             <h3 style={{fontFamily:"'Space Grotesk'",fontSize:17,fontWeight:700,color:C.text,marginBottom:8}}>Are you a licensed installer?</h3>
-            <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Join the GridGuide network. Free to sign up — 5% success fee on completed GridGuide-generated projects.</p>
+            <p style={{color:C.muted,fontSize:12,marginBottom:16}}>Join the GridGuide network. Free to sign up — success fee only on completed GridGuide-generated projects (10% Free · 7% Pro · 5% Enterprise).</p>
             <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
               <Btn size="md" variant="primary" onClick={()=>nav("e-installers")}>Apply to Join Network<Icon name="arrow" size={14} color={C.navy}/></Btn>
               <Btn size="md" variant="ghost" onClick={()=>nav("e-installers")}>View Full Installer Info</Btn>
@@ -1277,7 +1277,7 @@ function EnergyInstallerSignup({nav}) {
         <div style={{textAlign:"center",marginBottom:32}}>
           <Chip color={C.teal} style={{marginBottom:12}}>Installer Network</Chip>
           <h1 style={{fontFamily:"'Space Grotesk'",fontSize:isMobile?24:32,fontWeight:700,color:C.text,marginBottom:8}}>Join the GridGuide Installer Network</h1>
-          <p style={{color:C.muted,fontSize:13,lineHeight:1.7}}>Free to join · Background-checked · 5% success fee only on completed projects</p>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.7}}>Free to join · Background-checked · Success fee only on completed GridGuide-sourced projects (10% / 7% / 5% by plan)</p>
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:12}}>
             {[{icon:"shield",l:"License verified"},{icon:"check",l:"Background checked"},{icon:"star",l:"Homeowner rated"},{icon:"award",l:"NABCEP recognized"}].map(b=>(
               <div key={b.l} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.muted,padding:"5px 10px",background:C.navyCard,borderRadius:20,border:`1px solid ${C.navyBord}`}}>
@@ -9491,7 +9491,7 @@ function DashPayments({user}) {
         if(d&&!d.error){
           setWallet({balance:d.balance||0,pending:d.pending||0,lifetime:(d.balance||0)+(d.pending||0)});
           setWalletTxns((d.withdrawals||[]).map(w=>({
-            id:w.id, type:"debit", desc:`Withdrawal via ${w.method?.toUpperCase()||"bank"}`,
+            id:w.id, type:"debit", desc:`Withdrawal via ${w.method?.toUpperCase()||"bank"} · ${({PENDING_REVIEW:"Pending review",PROCESSING:"Approved, sending",COMPLETED:"Sent",FAILED:"Failed, refunded",CANCELLED:"Cancelled, refunded"})[w.status]||w.status||""}`,
             date:new Date(w.createdAt).toLocaleDateString(), amount:w.netAmount,
           })));
         }
@@ -9511,7 +9511,8 @@ function DashPayments({user}) {
     try{
       const r = await fetch("/api/wallet/apply-to-subscription",{
         method:"POST",credentials:"include",
-        headers:{"Content-Type":"application/json"},
+        // One key per click: a retried request applies the money only once.
+        headers:{"Content-Type":"application/json","Idempotency-Key":(globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`)},
         body:JSON.stringify({amount})
       });
       const data = await r.json();
@@ -9660,17 +9661,17 @@ function DashPayments({user}) {
   };
 
   const wMethods = [
-    {id:"stripe",  label:"Stripe Instant Payout", icon:"zap",     color:"#635BFF", time:"Instant (24/7)",        fee:"1.5%",   min:1},
-    {id:"ach",     label:"Bank Account (ACH)",     icon:"dollar",  color:C.teal,   time:"1–3 business days",     fee:"Free",   min:10},
-    {id:"paypal",  label:"PayPal / Venmo",         icon:"activity",color:"#003087", time:"Instant",               fee:"Free",   min:5},
-    {id:"check",   label:"Paper Check",            icon:"shield",  color:C.muted,  time:"7–10 business days",    fee:"$3.00",  min:25},
-    {id:"wire",    label:"Wire Transfer",          icon:"trending",color:C.gold,   time:"Same business day",     fee:"$15.00", min:100},
+    // Must match WITHDRAWAL_METHODS in lib/withdrawals.js. Instant (Stripe) and PayPal
+    // payouts are not offered until a real payout integration exists for them.
+    {id:"ach",     label:"Bank Account (ACH)",     icon:"dollar",  color:C.teal,   time:"3–5 business days after approval",  fee:"Free",   min:10},
+    {id:"check",   label:"Paper Check",            icon:"shield",  color:C.muted,  time:"7–10 business days after approval", fee:"$3.00",  min:25},
+    {id:"wire",    label:"Wire Transfer",          icon:"trending",color:C.gold,   time:"1–2 business days after approval",  fee:"$15.00", min:100},
   ];
   const selWM  = wMethods.find(m=>m.id===withdrawMethod);
   const netAmt = selWM?.id==="check"?Math.max(withdrawAmount-3,0):selWM?.id==="wire"?Math.max(withdrawAmount-15,0):selWM?.id==="stripe"?Math.max(withdrawAmount*0.985,0):withdrawAmount;
 
   const validateW = () => {
-    if(withdrawMethod==="ach"){
+    if(withdrawMethod==="ach"||withdrawMethod==="wire"){
       if(!wBankDetails.routing||wBankDetails.routing.length!==9) return "Enter a valid 9-digit routing number.";
       if(!wBankDetails.account||wBankDetails.account.length<4)   return "Enter a valid account number.";
       if(!wBankDetails.name)                                       return "Enter account holder name.";
@@ -9691,7 +9692,7 @@ function DashPayments({user}) {
         body:JSON.stringify({
           method: withdrawMethod,
           amount: withdrawAmount,
-          bankDetails: withdrawMethod==="ach"?wBankDetails:undefined,
+          bankDetails: (withdrawMethod==="ach"||withdrawMethod==="wire")?wBankDetails:undefined,
         })
       });
       const data = await r.json();
@@ -9980,7 +9981,7 @@ function DashPayments({user}) {
                   style={{width:"100%",padding:"10px 12px",background:"#1C2330",border:"1px solid #2A3545",borderRadius:9,color:"#E8EEFF",fontSize:15,fontFamily:"'Space Grotesk'",fontWeight:700,boxSizing:"border-box"}}/>
                 <div style={{fontSize:10,color:"#4A5570",marginTop:4}}>Available: ${balance.toFixed(2)} · Net: <span style={{color:C.green}}>${netAmt.toFixed(2)}</span></div>
               </div>
-              {withdrawMethod==="ach"&&[["routing","Routing Number (9 digits)","021000021"],["account","Account Number","****1234"],["name","Account Holder Name","Jane Smith"]].map(([f,l,ph])=>(
+              {(withdrawMethod==="ach"||withdrawMethod==="wire")&&[["routing","Routing Number (9 digits)","021000021"],["account","Account Number","****1234"],["name","Account Holder Name","Jane Smith"]].map(([f,l,ph])=>(
                 <div key={f} style={{marginBottom:12}}>
                   <div style={{fontSize:10,color:"#8890A8",marginBottom:5}}>{l}</div>
                   <input value={wBankDetails[f]} onChange={e=>setWBankDetails(d=>({...d,[f]:e.target.value}))} placeholder={ph}

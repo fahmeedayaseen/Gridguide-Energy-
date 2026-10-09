@@ -8,10 +8,11 @@
  */
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
-import { donateToGridFund }    from "@/lib/wallet.js";
+import { donateToGridFund, WalletError } from "@/lib/wallet.js";
+import { logger }              from "@/lib/sentry.js";
 import { z }                   from "zod";
 
-const schema = z.object({ amount: z.number().positive() });
+const schema = z.object({ amount: z.number().positive().max(100000) });
 
 export async function POST(request) {
   const auth = await authenticateRequest(request);
@@ -30,6 +31,8 @@ export async function POST(request) {
       remainingBalance: result.wallet.balance,
     });
   } catch (e) {
-    return err(e.message, 400);
+    if (e instanceof WalletError) return err(e.message, e.status);
+    logger.error("[GridFund] Donation failed", { userId: auth.user.id, error: e?.message });
+    return err("Something went wrong processing your donation. Please try again.", 500);
   }
 }
