@@ -90,6 +90,29 @@ const PUBLIC_ROUTES = [
   { path: "/api/utilities/router", methods: ["GET"] },
 ];
 
+/**
+ * Routes that also accept an Enterprise API key (`gg_live_...`) instead of a
+ * user JWT, for machine integrations (meters, BMS, DCIM). Middleware does NOT
+ * verify the key — the Edge runtime can't reach the database — it only lets
+ * the request through with identity headers stripped. Every handler listed
+ * here MUST authenticate the key via resolveEnterpriseActor() in
+ * lib/enterprise-api-keys.js. Keep this list exact and method-scoped.
+ */
+const API_KEY_ROUTES = [
+  { path: "/api/enterprise/geothermal/readings", methods: ["GET", "POST"] },
+  { path: "/api/enterprise/geothermal/assets", methods: ["GET"] },
+  { path: "/api/enterprise/geothermal/properties", methods: ["GET"] },
+];
+
+function isApiKeyRequest(request) {
+  const auth = request.headers.get("authorization") || "";
+  return auth.startsWith("Bearer gg_live_") || !!request.headers.get("x-api-key");
+}
+
+function isApiKeyRoute(pathname, method) {
+  return API_KEY_ROUTES.some((r) => r.path === pathname && r.methods.includes(method));
+}
+
 function isPublicRoute(pathname, method) {
   for (const route of PUBLIC_ROUTES) {
     if (route.methods && !route.methods.includes(method)) continue;
@@ -127,6 +150,16 @@ export async function middleware(request) {
 
   // Public API routes — pass through with identity headers stripped, nothing set.
   if (isPublicRoute(pathname, request.method)) {
+    const response = NextResponse.next({ request: { headers: sanitizedHeaders } });
+    return addCorsHeaders(response, request);
+  }
+
+  // Enterprise API-key integrations: pass through (identity stripped); the
+  // handler verifies the key. A key on any other route is rejected here.
+  if (isApiKeyRequest(request)) {
+    if (!isApiKeyRoute(pathname, request.method)) {
+      return jsonError("API keys can't be used on this endpoint", 403);
+    }
     const response = NextResponse.next({ request: { headers: sanitizedHeaders } });
     return addCorsHeaders(response, request);
   }
@@ -251,7 +284,7 @@ function addCorsHeaders(response, request) {
     response.headers.set("Access-Control-Allow-Origin", origin);
     response.headers.set("Access-Control-Allow-Credentials", "true");
     response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    response.headers.set("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-API-Key,Idempotency-Key");
   }
 
   return response;
