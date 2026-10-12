@@ -2616,6 +2616,10 @@ model EnterpriseOrg {
   energyAssets           EnterpriseEnergyAsset[]
   geothermalPpas         EnterpriseGeothermalPpa[]
   sustainabilityReadings EnterpriseSustainabilityReading[]
+  loadRampSteps          EnterpriseLoadRampStep[]
+  regulatoryMilestones   EnterpriseRegulatoryMilestone[]
+  costAllocations        EnterpriseCostAllocation[]
+  contractDeliveries     EnterpriseContractDelivery[]
   importBatches          EnterpriseImportBatch[]
   campaigns              EnterpriseCampaign[]
 
@@ -2634,12 +2638,21 @@ model EnterpriseProperty {
   utilityAccountId String?
   createdAt        DateTime @default(now())
 
+  // Energy & Water accountability settings (data centers). All optional:
+  // anything not entered is shown as "No data", never assumed.
+  requiredReserveMarginPct    Float? // contracted/planning reserve margin the site must hold, e.g. 15 = 15%
+  gridWaterIntensityGalPerMwh Float? // upstream water consumed per MWh of grid power, user-sourced
+  gridWaterIntensitySource    String? // citation for the figure above (e.g. "NREL 2011, regional mix")
+
   org                    EnterpriseOrg                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   devices                Device[]
   deviceLinkRequests     EnterpriseDeviceLinkRequest[]
   energyAssets           EnterpriseEnergyAsset[]
   geothermalPpas         EnterpriseGeothermalPpa[]
   sustainabilityReadings EnterpriseSustainabilityReading[]
+  loadRampSteps          EnterpriseLoadRampStep[]
+  regulatoryMilestones   EnterpriseRegulatoryMilestone[]
+  costAllocations        EnterpriseCostAllocation[]
 
   @@index([orgId])
   @@index([status])
@@ -2653,7 +2666,7 @@ model EnterpriseEnergyAsset {
   orgId                 String
   propertyId            String?
   name                  String
-  type                  String // GEOTHERMAL_GENERATION | GROUND_SOURCE_HEAT_PUMP | THERMAL_STORAGE | BATTERY | UPS | CHILLER | GRID_CONNECTION | SOLAR
+  type                  String // see ASSET_TYPES in lib/geothermal-schemas.js (geothermal, solar, wind, hydro, nuclear, gas, storage, backup, cooling, grid)
   status                String    @default("PLANNED") // PLANNED | CONSTRUCTION | ACTIVE | INACTIVE | RETIRED
   provider              String?
   externalId            String?
@@ -2662,6 +2675,8 @@ model EnterpriseEnergyAsset {
   coolingType           String? // AIR | WATER | HYBRID | CLOSED_LOOP | GROUND_SOURCE | OTHER
   waterSource           String? // MUNICIPAL | RECLAIMED | GROUNDWATER | SURFACE | CLOSED_LOOP | NONE | OTHER
   commercialOperationAt DateTime?
+  microgrid             Boolean   @default(false) // part of the site's private microgrid
+  firmCapacityKw        Float? // accredited firm capacity counted toward reserve margin; null = not counted
   metadata              Json?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
@@ -2670,6 +2685,7 @@ model EnterpriseEnergyAsset {
   property EnterpriseProperty?               @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   ppas     EnterpriseGeothermalPpa[]
   readings EnterpriseSustainabilityReading[]
+  milestones EnterpriseRegulatoryMilestone[]
 
   @@unique([orgId, externalId])
   @@index([orgId])
@@ -2678,6 +2694,8 @@ model EnterpriseEnergyAsset {
   @@index([status])
 }
 
+// Generation / supply contract serving a site. Historically geothermal-only
+// (hence the name); now any resource type. Table name kept for compatibility.
 model EnterpriseGeothermalPpa {
   id                  String    @id @default(cuid())
   orgId               String
@@ -2687,6 +2705,12 @@ model EnterpriseGeothermalPpa {
   seller              String
   utility             String?
   status              String    @default("PROPOSED") // PROPOSED | PENDING_APPROVAL | ACTIVE | EXPIRED | TERMINATED
+  resourceType        String    @default("GEOTHERMAL") // GEOTHERMAL | SOLAR | WIND | HYDRO | NUCLEAR | GAS | STORAGE | GRID_MIX | OTHER
+  contractType        String    @default("PPA") // PPA | VIRTUAL_PPA | UTILITY_TARIFF | SLEEVED | CAPACITY | RESERVE | TOLLING | BEHIND_THE_METER | OTHER
+  contractedAnnualMwh Float? // contracted energy per year if the contract states it; otherwise derived from MW × capacity factor
+  firmCapacityMw      Float? // accredited firm capacity counted toward reserve margin; null = not counted
+  waterIntensityGalPerMwh Float? // upstream water consumed per MWh generated, user-sourced
+  waterIntensitySource    String?
   contractedMw        Float
   termYears           Int
   capacityFactorPct   Float     @default(90)
@@ -2703,11 +2727,15 @@ model EnterpriseGeothermalPpa {
   org      EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   property EnterpriseProperty?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   asset    EnterpriseEnergyAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  deliveries      EnterpriseContractDelivery[]
+  costAllocations EnterpriseCostAllocation[]
+  milestones      EnterpriseRegulatoryMilestone[]
 
   @@index([orgId])
   @@index([propertyId])
   @@index([assetId])
   @@index([status])
+  @@index([resourceType])
 }
 
 model EnterpriseSustainabilityReading {
@@ -2726,6 +2754,7 @@ model EnterpriseSustainabilityReading {
   waterConsumedGallons         Float?
   baselineWaterConsumedGallons Float?
   waterRecycledGallons         Float?
+  waterDischargedGallons       Float? // returned to sewer / environment; needed for a verified water balance
   carbonAvoidedKg              Float?
   // Measurements are nullable: null = not reported (shown as "No data"), never zero.
   source                       String   @default("MANUAL") // MANUAL | CSV | API | METER | DCIM | BMS
@@ -2743,6 +2772,115 @@ model EnterpriseSustainabilityReading {
   @@index([propertyId, recordedAt])
   @@index([assetId, recordedAt])
 }
+// ── Energy & Water accountability (data centers) ─────────────────────────────
+
+// Planned site load from construction through peak operation. Each step is
+// the planned load from effectiveDate until the next step.
+model EnterpriseLoadRampStep {
+  id             String   @id @default(cuid())
+  orgId          String
+  propertyId     String
+  effectiveDate  DateTime
+  phase          String // CONSTRUCTION | COMMISSIONING | PARTIAL_OPERATION | RAMP | PEAK_OPERATION | OTHER
+  plannedLoadMw  Float // planned average facility load
+  plannedPeakMw  Float? // planned peak demand, used for reserve margin when set
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org      EnterpriseOrg      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([propertyId, effectiveDate])
+}
+
+// Permits, regulatory filings, interconnection and transmission approvals.
+model EnterpriseRegulatoryMilestone {
+  id           String    @id @default(cuid())
+  orgId        String
+  propertyId   String?
+  contractId   String?
+  assetId      String?
+  category     String // PERMIT | REGULATORY_FILING | RATE_CASE | INTERCONNECTION | TRANSMISSION | ENVIRONMENTAL | WATER_RIGHTS | ZONING | OTHER
+  title        String
+  agency       String?
+  docketNumber String?
+  status       String    @default("NOT_STARTED") // NOT_STARTED | IN_PROGRESS | FILED | APPROVED | DENIED | WITHDRAWN | EXPIRED
+  dueDate      DateTime?
+  filedAt      DateTime?
+  decidedAt    DateTime?
+  expiresAt    DateTime?
+  referenceUrl String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  org      EnterpriseOrg            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  contract EnterpriseGeothermalPpa? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  asset    EnterpriseEnergyAsset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// Who pays for what: the data-center customer versus utility ratepayers.
+model EnterpriseCostAllocation {
+  id                String    @id @default(cuid())
+  orgId             String
+  propertyId        String?
+  contractId        String?
+  category          String // GENERATION | TRANSMISSION | DISTRIBUTION | INTERCONNECTION | CAPACITY | RESERVE | WATER_INFRASTRUCTURE | STRANDED_COST_PROTECTION | OTHER
+  description       String
+  totalCost         Float
+  customerShare     Float // paid by the data-center customer
+  ratepayerShare    Float // recovered from utility ratepayers
+  otherShare        Float     @default(0) // grants, third parties, etc.
+  basis             String    @default("CONTRACT") // TARIFF | CONTRACT | COMMISSION_ORDER | SETTLEMENT | ESTIMATE
+  status            String    @default("ESTIMATED") // ESTIMATED | PROPOSED | APPROVED | ACTUAL
+  sourceReference   String? // docket, tariff sheet or contract section
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  org      EnterpriseOrg            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  contract EnterpriseGeothermalPpa? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([propertyId])
+  @@index([contractId])
+}
+
+// Actual energy delivered under a contract for a settlement period.
+model EnterpriseContractDelivery {
+  id              String   @id @default(cuid())
+  orgId           String
+  contractId      String
+  periodStart     DateTime
+  periodEnd       DateTime // exclusive
+  deliveredMwh    Float
+  peakDeliveredMw Float?
+  curtailedMwh    Float?
+  source          String   @default("MANUAL") // MANUAL | CSV | API | SETTLEMENT | METER
+  externalId      String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org      EnterpriseOrg           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contract EnterpriseGeothermalPpa @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, source, externalId])
+  @@index([orgId])
+  @@index([contractId, periodStart])
+}
+
 
 model EnterpriseHomeownerInvite {
   id                    String    @id @default(cuid())

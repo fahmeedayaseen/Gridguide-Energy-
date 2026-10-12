@@ -100,6 +100,8 @@ test("SQL row shape converts to the same metrics as the JS path", () => {
   const row = { day: "2026-10-01", n: agg.readingCount };
   for (const f of MEASUREMENT_FIELDS) { row[`s_${f}`] = agg.sums[f]; row[`c_${f}`] = agg.counts[f]; }
   for (const [p, v] of Object.entries(agg.pairs)) { row[`pa_${p}`] = v.a; row[`pb_${p}`] = v.b; row[`pn_${p}`] = v.n; }
+  Object.assign(row, { w_any: agg.water.anyN, w_complete: agg.water.completeN, w_withdrawn: agg.water.withdrawn,
+    w_consumed: agg.water.consumed, w_discharged: agg.water.discharged, w_recycled: agg.water.recycled });
   const { metrics, trend } = metricsFromDailySqlRows([row]);
   assert.deepEqual(metrics, calculateEnergyWaterMetrics(readings));
   assert.equal(trend[0].date, "2026-10-01");
@@ -113,4 +115,30 @@ test("aggregate SQL binds every value as a parameter", () => {
   assert.equal(params.length, 4);
   assert.match(sql, /\$4/);
   assert.equal(params[1], "2026-01-01T00:00:00.000Z");
+});
+
+// ── Verified water claims ─────────────────────────────────────────────────────
+const fullWater = { waterWithdrawnGallons: 1000, waterConsumedGallons: 700, waterDischargedGallons: 280, waterRecycledGallons: 400 };
+
+test("water claim is VERIFIED only with all four measurements and a closed balance", () => {
+  const ok = calculateEnergyWaterMetrics([fullWater]).waterClaim;
+  assert.equal(ok.status, "VERIFIED");
+  assert.equal(ok.balanceGapPct, 2); // |1000 - (700 + 280)| / 1000
+});
+
+test("missing discharge makes the claim INCOMPLETE and names the field", () => {
+  const { waterDischargedGallons, ...noDischarge } = fullWater;
+  const claim = calculateEnergyWaterMetrics([fullWater, noDischarge]).waterClaim;
+  assert.equal(claim.status, "INCOMPLETE");
+  assert.deepEqual(claim.missingFields, ["waterDischargedGallons"]);
+});
+
+test("a water balance that doesn't close is UNBALANCED", () => {
+  const claim = calculateEnergyWaterMetrics([{ ...fullWater, waterDischargedGallons: 0 }]).waterClaim;
+  assert.equal(claim.status, "UNBALANCED");
+  assert.equal(claim.verified, false);
+});
+
+test("no water readings means NO_DATA, and energy-only readings don't count", () => {
+  assert.equal(calculateEnergyWaterMetrics([{ itEnergyKwh: 5 }]).waterClaim.status, "NO_DATA");
 });
