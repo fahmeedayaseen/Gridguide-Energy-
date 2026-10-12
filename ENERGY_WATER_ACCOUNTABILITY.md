@@ -34,7 +34,7 @@ API status object (`metrics.waterClaim`, `water.claim`): `verification_status`, 
 
 Water volumes may be sent in `gal` (default), `L` or `m3` via `waterUnit`; they're stored in gallons and the input unit is kept in the reading's `metadata.provenance`.
 
-### Meters and actual load (formula `load-ramp-v2-meters`)
+### Meters and actual load (formula `load-ramp-v3-interval-split`)
 
 `EnterpriseMeter` records each electricity meter: level (MAIN, SETTLEMENT, SUB, CHECK), parent, coverage % of site load, interval, effective dates, settlement priority, and whether it's the preferred (authoritative) settlement meter. Readings can name their `meterId`.
 
@@ -42,9 +42,16 @@ Water volumes may be sent in `gal` (default), `L` or `m3` via `waterUnit`; they'
 - A preferred settlement meter in service is used alone (lowest priority number, then id, if several).
 - Saving a meter is refused if the summed main meters would cover more than 100% of the site at the same time, if a SUB meter has no parent, if the parent chain would loop, or if two preferred settlement meters overlap in time.
 - Duplicate readings for the same meter and timestamp are collapsed (latest update wins).
-- Nothing is scaled up: each month reports `COMPLETE`, `PARTIAL` (a counted meter missing, or less than 100% coverage) or `UNAVAILABLE`, with data and meter coverage.
+- Nothing is scaled up: each month reports `COMPLETE`, `PARTIAL` (a counted meter missing, or less than 100% coverage), `ESTIMATED` (see below) or `UNAVAILABLE`, with data and meter coverage.
 - Sites with no meters keep the legacy rule (site-level readings with no asset).
-- If meters change mid-month, the month uses the meters in service at mid-month.
+
+**Meter changes during a month.** When meter coverage changes during a reporting month, monthly load is calculated using each meter's effective service dates. If interval-level allocation is unavailable, the system may use the meter configuration active at mid-month, but the resulting load must be marked ESTIMATED and the assumption disclosed.
+
+- The month is split at every effective start/end date of a top-level MAIN/SETTLEMENT meter (SUB/CHECK changes don't alter site load, so they don't split it).
+- Each interval uses only the meters active in it, with the same hierarchy rules (SUB/CHECK never added, preferred settlement meter used alone), so parent and sub-meter readings are never double counted. Readings from a meter outside its service dates are not counted.
+- The intervals are added to give the month: average MW is time-weighted across intervals, and `measuredMwh` is the sum of counted energy. A month that was split returns its `intervals` (from, to, meters, MW, status).
+- Splitting is impossible when a month has only monthly totals, or when a reading runs across a meter change. Then the meters in service at mid-month are used, `status` is `ESTIMATED` (never `COMPLETE`), `allocation` is `MID_MONTH_ESTIMATE`, `estimationMethod` is `MID_MONTH_METER_CONFIGURATION`, and `assumption` states what was assumed. The Load & Reserve tab shows the badge and the assumption text.
+- Monthly totals are fine (not estimated) in months with no meter change.
 
 Evidence for this module's acceptance is in `docs/evidence/pr5/`. Rollback scripts: `prisma/rollbacks/`.
 

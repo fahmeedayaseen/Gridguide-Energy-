@@ -114,7 +114,7 @@ Limitation: the API is mocked in these runs; the API routes themselves have not 
 - [x] PR links and exact commit SHAs for #3, #4 and #5 — above.
 - [x] Tiered 5% / 10% balance policy implemented — no variance from the handoff. Boundaries are inclusive (5.0% → VERIFIED, 10.0% → REVIEW).
 - [x] Separate fields for imported reclaimed water and on-site recycled water.
-- [x] Multi-meter hierarchy, coverage, overlap protection and settlement-meter rules — one documented simplification: when the set of meters changes mid-month, the month is evaluated with the meters in service at mid-month.
+- [x] Multi-meter hierarchy, coverage, overlap protection and settlement-meter rules. Meter changes during a month: the month is split at each meter's effective dates and the intervals are added; the mid-month configuration is used only when splitting is impossible, and that load is marked ESTIMATED with the assumption disclosed (`load-ramp-v3-interval-split`, see `load-interval-split.txt`).
 - [x] Migration, calculation-test, browser-test and PostgreSQL evidence attached (this folder).
 - [x] GitHub billing restriction explained, with owner and next action.
 - [ ] Final product, engineering and release approvals — **pending**. Product should also confirm the water definitions above become the standard for "verified" claims.

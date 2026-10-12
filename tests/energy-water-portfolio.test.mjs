@@ -160,3 +160,15 @@ test("ramp comparison carries meter-based load status when given siteMonthlyLoad
   assert.equal(rows[0].meterCoveragePct, 60);
   assert.equal(rows[0].variancePct, -25);
 });
+
+test("ramp comparison discloses ESTIMATED load and its assumption", async () => {
+  const { siteMonthlyLoad } = await import("../lib/energy-water-meters.mjs");
+  const m = (id, extra) => ({ id, name: id, meterLevel: "MAIN", coveragePct: 100, effectiveFrom: "2026-01-01T00:00:00Z", effectiveTo: null, parentMeterId: null, preferredSettlement: false, ...extra });
+  const meters = [m("A", { effectiveTo: "2026-10-10T00:00:00Z" }), m("B", { effectiveFrom: "2026-10-10T00:00:00Z" })];
+  const monthly = Object.entries(siteMonthlyLoad(meters, [{ month: "2026-10", meterId: "B", kwh: 50 * 1000 * 528, minutes: 528 * 60 }]))
+    .map(([month, v]) => ({ month, ...v }));
+  const [row] = rampComparison([], monthly, { from: new Date("2026-10-01T00:00:00Z"), to: new Date("2026-10-31T00:00:00Z") });
+  assert.equal(row.loadStatus, "ESTIMATED");
+  assert.equal(row.loadAllocation, "MID_MONTH_ESTIMATE");
+  assert.match(row.loadAssumption, /meter configuration active at mid-month/);
+});

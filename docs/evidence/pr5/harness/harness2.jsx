@@ -9,6 +9,14 @@ window.React = React;
 const now = Date.now();
 const iso = (ms) => new Date(ms).toISOString();
 const monthStart = (offset) => { const d = new Date(); d.setUTCDate(1); d.setUTCHours(0,0,0,0); d.setUTCMonth(d.getUTCMonth() + offset); return d.toISOString(); };
+const SWAP_METERS = [
+    { id: "mt2a", propertyId: "p2", name: "Old main meter", meterLevel: "MAIN", coveragePct: 100, effectiveFrom: monthStart(-6), effectiveTo: iso(Date.parse(monthStart(-1)) + 9 * 864e5), preferredSettlement: false, parentMeterId: null },
+    { id: "mt2b", propertyId: "p2", name: "New main meter", meterLevel: "MAIN", coveragePct: 100, effectiveFrom: iso(Date.parse(monthStart(-1)) + 9 * 864e5), effectiveTo: null, preferredSettlement: false, parentMeterId: null },
+];
+const SWAP_READINGS = [
+    // A monthly total covering the whole of last month: it can't be split at the Day-10 meter swap.
+    { id: "r2b", propertyId: "p2", assetId: null, meterId: "mt2b", recordedAt: monthStart(-1), intervalMinutes: (Date.parse(monthStart(0)) - Date.parse(monthStart(-1))) / 60e3, source: "METER", facilityEnergyKwh: 12 * 1000 * (Date.parse(monthStart(0)) - Date.parse(monthStart(-1))) / 3600e3 },
+];
 const db = {
   properties: [{ id: "p1", name: "Cheyenne DC", type: "DATA_CENTER", requiredReserveMarginPct: 15, gridWaterIntensityGalPerMwh: null, gridWaterIntensitySource: null }],
   assets: [{ id: "a1", propertyId: "p1", name: "Gas turbines (microgrid)", type: "GAS_TURBINE", status: "ACTIVE", ratedCapacityKw: 60000, microgrid: true, firmCapacityKw: 55000 }],
@@ -23,12 +31,20 @@ const db = {
   ],
   milestones: [{ id: "m1", propertyId: "p1", category: "TRANSMISSION", title: "230 kV line approval", agency: "State PSC", status: "FILED", dueDate: iso(now - 5 * 864e5) }],
   "cost-allocations": [{ id: "k1", propertyId: "p1", category: "TRANSMISSION", description: "Line upgrade", totalCost: 1000000, customerShare: 800000, ratepayerShare: 200000, otherShare: 0, basis: "COMMISSION_ORDER", status: "APPROVED", sourceReference: "Docket 123" }],
-  meters: [{ id: "mt1", propertyId: "p1", name: "Utility revenue meter", meterLevel: "SETTLEMENT", coveragePct: 100, effectiveFrom: monthStart(-6), effectiveTo: null, preferredSettlement: true, parentMeterId: null }],
+  meters: [
+    { id: "mt1", propertyId: "p1", name: "Utility revenue meter", meterLevel: "SETTLEMENT", coveragePct: 100, effectiveFrom: monthStart(-6), effectiveTo: null, preferredSettlement: true, parentMeterId: null }],
   readings: [
     { id: "r1", propertyId: "p1", assetId: null, meterId: "mt1", recordedAt: iso(now - 2 * 3600e3), intervalMinutes: 60, source: "METER", facilityEnergyKwh: 6000, itEnergyKwh: 5000, gridEnergyKwh: 1000,
       waterWithdrawnGallons: 1000, waterReclaimedImportedGallons: 0, waterConsumedGallons: 700, waterDischargedGallons: null, waterRecycledGallons: 300 },
   ],
 };
+// ?swap adds a second site whose main meter was replaced on day 10 of last month and which
+// only sent a monthly total — the month can't be split, so load must show ESTIMATED.
+if (location.search.includes("swap")) {
+  db.properties.push({ id: "p2", name: "Reno DC (meter swap)", type: "DATA_CENTER", requiredReserveMarginPct: null, gridWaterIntensityGalPerMwh: null, gridWaterIntensitySource: null });
+  db.meters.push(...SWAP_METERS);
+  db.readings.push(...SWAP_READINGS);
+}
 let seq = 100;
 window.__calls = [];
 const json = (b, status = 200) => Promise.resolve(new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } }));
@@ -41,7 +57,8 @@ function portfolio(pid) {
   const metrics = calculateEnergyWaterMetrics(readings);
   const sites = db.properties.filter((p) => !pid || p.id === pid).map((p) => {
     const steps = db["ramp-steps"].filter((s) => s.propertyId === p.id).sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
-    const mm = {}; for (const r of readings.filter((r) => r.propertyId === p.id && r.facilityEnergyKwh != null && (r.meterId || !r.assetId))) { const m = r.recordedAt.slice(0, 7); const k = m + (r.meterId || ""); mm[k] ||= { month: m, meterId: r.meterId || null, kwh: 0, minutes: 0 }; mm[k].kwh += r.facilityEnergyKwh; mm[k].minutes += r.intervalMinutes; }
+    // One row per reading with its start/end, like the portfolio SQL's per-interval groups.
+    const mm = readings.filter((r) => r.propertyId === p.id && r.facilityEnergyKwh != null && (r.meterId || !r.assetId)).map((r) => ({ month: r.recordedAt.slice(0, 7), meterId: r.meterId || null, kwh: r.facilityEnergyKwh, minutes: r.intervalMinutes, count: 1, firstAt: r.recordedAt, lastEndAt: iso(Date.parse(r.recordedAt) + r.intervalMinutes * 60e3) }));
     const siteMeters = db.meters.filter((m) => m.propertyId === p.id);
     const monthly = Object.entries(M.siteMonthlyLoad(siteMeters, Object.values(mm))).map(([month, v]) => ({ month, ...v }));
     const first = steps[0] ? new Date(steps[0].effectiveDate) : from; const last = steps.length ? new Date(steps.at(-1).effectiveDate) : to;

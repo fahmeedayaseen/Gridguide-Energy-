@@ -18,7 +18,7 @@ import { ok, err } from "@/lib/auth.js";
 import { resolveEnterpriseActor } from "@/lib/enterprise-api-keys.js";
 import { checkOwnedLinks } from "@/lib/geothermal-store.js";
 import { buildDailyAggregateSql, metricsFromDailySqlRows, WATER_FORMULA_VERSION } from "@/lib/geothermal-metrics.mjs";
-import { siteMonthlyLoad, LOAD_FORMULA_VERSION } from "@/lib/energy-water-meters.mjs";
+import { siteMonthlyLoad, buildLoadIntervalSql, LOAD_FORMULA_VERSION } from "@/lib/energy-water-meters.mjs";
 import {
   deliveryPerformance, resourceMix, reserveMargin, rampComparison, costAllocationSummary,
   upstreamWater, milestoneSummary,
@@ -60,25 +60,20 @@ export async function GET(request) {
   const byProperty = propertyId ? { propertyId } : {};
   const readingRange = { orgId, recordedAt: { gte: range.from, lt: range.to }, ...byProperty };
 
-  // Monthly facility energy per (site, meter). Duplicate readings for the same
-  // meter and timestamp are collapsed deterministically (latest update wins),
-  // and meter selection/overlap rules are applied in siteMonthlyLoad().
+  // Facility energy per (site, meter, month, span between meter changes).
+  // Duplicate readings for the same meter and timestamp are collapsed
+  // deterministically (latest update wins). Each reading is tagged with the
+  // number of the site's meter-change instants (effective start/end dates of
+  // top-level MAIN/SETTLEMENT meters) at or before it, so a month splits at
+  // every change; firstAt/lastEndAt let siteMonthlyLoad() place each group in
+  // its interval and detect readings that run across a change.
   // Readings with no meter count only when they're site-level (no asset).
   const loadSqlParams = [orgId, iso(range.from), iso(range.to)];
   let loadWhere = `"orgId" = $1
       AND "recordedAt" >= ($2::timestamptz AT TIME ZONE 'UTC') AND "recordedAt" < ($3::timestamptz AT TIME ZONE 'UTC')
       AND "facilityEnergyKwh" IS NOT NULL AND ("meterId" IS NOT NULL OR "assetId" IS NULL)`;
   if (propertyId) { loadSqlParams.push(propertyId); loadWhere += ` AND "propertyId" = $4`; }
-  const loadSql = `SELECT "propertyId", "meterId", to_char("recordedAt", 'YYYY-MM') AS "month",
-      SUM("facilityEnergyKwh")::float8 AS "kwh", SUM("intervalMinutes")::float8 AS "minutes", COUNT(*)::int AS "count"
-    FROM (
-      SELECT DISTINCT ON ("propertyId", COALESCE("meterId", ''), "recordedAt")
-        "propertyId", "meterId", "recordedAt", "facilityEnergyKwh", "intervalMinutes"
-      FROM "EnterpriseSustainabilityReading"
-      WHERE ${loadWhere}
-      ORDER BY "propertyId", COALESCE("meterId", ''), "recordedAt", "updatedAt" DESC, "id" DESC
-    ) d
-    GROUP BY 1, 2, 3 ORDER BY 1, 3, 2`;
+  const loadSql = buildLoadIntervalSql(loadWhere);
 
   const water = buildDailyAggregateSql({ orgId, from: range.from, to: range.to, propertyId });
 
@@ -123,7 +118,8 @@ export async function GET(request) {
     if (rampTo > maxTo) rampTo = maxTo;
     const siteMeters = meters.filter((m) => m.propertyId === p.id);
     const meterMonths = loadRows.filter((r) => r.propertyId === p.id)
-      .map((r) => ({ month: r.month, meterId: r.meterId ?? null, kwh: Number(r.kwh), minutes: Number(r.minutes), count: Number(r.count) }));
+      .map((r) => ({ month: r.month, meterId: r.meterId ?? null, kwh: Number(r.kwh), minutes: Number(r.minutes), count: Number(r.count),
+        firstAt: r.firstAt, lastEndAt: r.lastEndAt }));
     const monthly = Object.entries(siteMonthlyLoad(siteMeters, meterMonths)).map(([month, v]) => ({ month, ...v }));
     return {
       property: p,

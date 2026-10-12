@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-const srv = createServer((req, res) => { const f = req.url === "/" ? "index2.html" : req.url.slice(1).split("?")[0]; try { res.end(readFileSync(f)); } catch { res.statusCode = 404; res.end(); } }).listen(4790);
+const srv = createServer((req, res) => { const u = req.url.split("?")[0]; const f = u === "/" ? "index2.html" : u.slice(1); try { res.end(readFileSync(f)); } catch { res.statusCode = 404; res.end(); } }).listen(4790);
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const errors = []; page.on("pageerror", (e) => errors.push(e.message)); page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
@@ -150,6 +150,21 @@ await page.setViewportSize({ width: 390, height: 844 });
 for (const n of ["Portfolio", "Load & Reserve", "Costs", "Water"]) { await tab(n); }
 check("mobile: no horizontal page overflow", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 await page.screenshot({ path: "p8-mobile.png", fullPage: true });
+
+// Interval-split rule: a site whose main meter was swapped mid-month and that only sent a monthly
+// total can't be split at the meters' effective dates → ESTIMATED with the assumption disclosed.
+await page.setViewportSize({ width: 1280, height: 900 });
+await page.goto("http://localhost:4790/?swap");
+await page.waitForSelector("text=Accountability Snapshot");
+await tab("Load & Reserve");
+t = await text();
+const lastMonth = (() => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+check("meter swap with monthly totals only → ESTIMATED, not COMPLETE", new RegExp(`${lastMonth}[^\\n]*\\n?[^\\n]*ESTIMATED`).test(t) && t.includes(`${lastMonth} — ESTIMATED:`));
+check("estimate discloses the mid-month assumption", t.includes("meter configuration active at mid-month") && t.includes("estimate, not a verified figure"));
+check("footnote states the effective-service-date rule", t.includes("monthly load is calculated using each meter's effective service dates"));
+check("site with interval readings is not estimated", (await page.locator("[data-testid=ew-load-estimates]").count()) === 1);
+await page.locator("[data-testid=ew-load-estimates]").scrollIntoViewIfNeeded();
+await page.screenshot({ path: "p10-load-estimated.png", fullPage: true });
 
 check("no page/console errors", errors.length === 0);
 if (errors.length) console.log(errors.slice(0, 5));
