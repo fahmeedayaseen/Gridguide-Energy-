@@ -143,3 +143,20 @@ test("milestones: overdue, upcoming and expiring permits", () => {
 test("monthsBetween spans year boundaries", () => {
   assert.deepEqual(monthsBetween(new Date("2026-11-15T00:00:00Z"), new Date("2027-02-01T00:00:00Z")), ["2026-11", "2026-12", "2027-01"]);
 });
+
+test("reserve margin names every missing input instead of guessing", () => {
+  const r = reserveMargin({ property: { id: "p" }, contracts: [{ id: "c", name: "Solar", status: "ACTIVE" }], assets: [], steps: [] });
+  assert.equal(r.calculable, false);
+  assert.equal(r.missingInputs.length, 4);
+  assert.match(r.missingInputs.join(" | "), /firm capacity.*current peak.*full build-out.*required reserve margin/);
+  assert.equal(r.formula_version, "reserve-margin-v1");
+});
+
+test("ramp comparison carries meter-based load status when given siteMonthlyLoad output", () => {
+  const rows = rampComparison([{ effectiveDate: "2026-01-01T00:00:00Z", plannedLoadMw: 40 }],
+    [{ month: "2026-01", actualMw: 30, status: "PARTIAL", dataCoveragePct: 0, meterCoveragePct: 60 }],
+    { from: new Date("2026-01-01T00:00:00Z"), to: new Date("2026-02-01T00:00:00Z") });
+  assert.equal(rows[0].loadStatus, "PARTIAL");
+  assert.equal(rows[0].meterCoveragePct, 60);
+  assert.equal(rows[0].variancePct, -25);
+});

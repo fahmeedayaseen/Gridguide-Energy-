@@ -25,6 +25,11 @@ export async function PATCH(request, { params }) {
   if (linkError) return err(linkError, 404);
 
   const merged = { ...existing, ...data };
+  if (merged.meterId) {
+    const meter = await prisma.enterpriseMeter.findFirst({ where: { id: merged.meterId, orgId: ctx.org.id }, select: { propertyId: true } });
+    if (!meter) return err("Meter not found", 404);
+    if (meter.propertyId !== merged.propertyId) return err("That meter belongs to a different site than the reading", 400);
+  }
   if (!MEASUREMENT_FIELDS.some((f) => merged[f] !== null && merged[f] !== undefined)) {
     return err("A reading must keep at least one measurement. Delete it instead.", 400);
   }

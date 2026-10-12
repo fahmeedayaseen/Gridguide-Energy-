@@ -20914,14 +20914,17 @@ const GEO_MEASUREMENTS=[
   ["geothermalDeliveredKwh","Geothermal delivered","kWh","Geothermal kWh"],
   ["gridEnergyKwh","Grid energy","kWh","Grid kWh"],
   ["coolingEnergyKwh","Cooling energy","kWh","Cooling kWh"],
-  ["waterWithdrawnGallons","New water withdrawn","gal","New water withdrawn gal (excl. recycled)"],
+  ["waterWithdrawnGallons","Potable water withdrawn","gal","Potable water withdrawn gal"],
+  ["waterReclaimedImportedGallons","Reclaimed water imported","gal","Reclaimed water imported gal"],
   ["waterConsumedGallons","Water consumed","gal","Water consumed gal"],
   ["baselineWaterConsumedGallons","Baseline water consumed","gal","Baseline water consumed gal"],
-  ["waterRecycledGallons","Reclaimed / recycled water","gal","Reclaimed/recycled water gal"],
+  ["waterRecycledGallons","Water recycled on site","gal","Water recycled on site gal"],
   ["waterDischargedGallons","Water discharged","gal","Water discharged gal"],
+  ["waterStorageChangeGallons","Storage change (±)","gal","Storage change gal (± signed)"],
   ["carbonAvoidedKg","CO₂ avoided","kg","CO₂ avoided kg"],
 ];
 const GEO_FIELD_KEYS=GEO_MEASUREMENTS.map(m=>m[0]);
+const GEO_SIGNED=new Set(["waterStorageChangeGallons"]); // may be negative
 const GEO_ASSET_TYPES=["GEOTHERMAL_GENERATION","SOLAR","WIND","HYDRO","NUCLEAR","GAS_TURBINE","RECIPROCATING_ENGINE","FUEL_CELL","DIESEL_GENERATOR","BATTERY","THERMAL_STORAGE","UPS","GROUND_SOURCE_HEAT_PUMP","CHILLER","GRID_CONNECTION"];
 const GEO_ASSET_STATUSES=["PLANNED","CONSTRUCTION","ACTIVE","INACTIVE","RETIRED"];
 const GEO_COOLING=["AIR","WATER","HYBRID","CLOSED_LOOP","GROUND_SOURCE","OTHER"];
@@ -20935,8 +20938,8 @@ const geoToLocalInput=iso=>{if(!iso)return"";const d=new Date(iso);return `${d.g
 const geoToDateInput=iso=>iso?new Date(iso).toISOString().slice(0,10):"";
 const geoDateToIso=v=>v?`${v}T00:00:00.000Z`:"";
 const geoBlankAsset={propertyId:"",name:"",type:"GEOTHERMAL_GENERATION",status:"PLANNED",provider:"",ratedCapacityKw:"",thermalCapacityKwh:"",coolingType:"",waterSource:"",commercialOperationAt:"",microgrid:false,firmCapacityKw:""};
-const geoBlankPpa={propertyId:"",assetId:"",name:"",seller:"",utility:"",status:"PROPOSED",resourceType:"GEOTHERMAL",contractType:"PPA",contractedMw:"",contractedAnnualMwh:"",firmCapacityMw:"",termYears:"15",capacityFactorPct:"90",pricePerMwh:"",annualEscalationPct:"",regulatoryApproval:"PENDING",signedAt:"",deliveryStartAt:"",deliveryEndAt:"",waterIntensityGalPerMwh:"",waterIntensitySource:"",notes:""};
-const geoBlankReading=()=>({propertyId:"",assetId:"",recordedAt:geoToLocalInput(new Date().toISOString()),intervalMinutes:"60",...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,""]))});
+const geoBlankPpa={propertyId:"",assetId:"",name:"",seller:"",utility:"",status:"PROPOSED",resourceType:"GEOTHERMAL",contractType:"PPA",contractedMw:"",contractedAnnualMwh:"",firmCapacityMw:"",termYears:"15",capacityFactorPct:"90",pricePerMwh:"",annualEscalationPct:"",regulatoryApproval:"PENDING",signedAt:"",deliveryStartAt:"",deliveryEndAt:"",waterIntensityGalPerMwh:"",waterIntensitySource:"",evidenceReference:"",notes:""};
+const geoBlankReading=()=>({propertyId:"",assetId:"",meterId:"",recordedAt:geoToLocalInput(new Date().toISOString()),intervalMinutes:"60",...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,""]))});
 
 const GEO_FIELD_STYLE={width:"100%",padding:"9px 10px",background:T_E.surf,border:`1px solid ${T_E.bord}`,borderRadius:8,color:T_E.text,fontSize:11,boxSizing:"border-box"};
 const GEO_LABEL_STYLE={display:"block",fontSize:10,color:T_E.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".04em"};
@@ -20968,7 +20971,7 @@ const EW_MILESTONE_CLOSED=["APPROVED","DENIED","WITHDRAWN","EXPIRED"];
 const EW_COST_CATS=["GENERATION","TRANSMISSION","DISTRIBUTION","INTERCONNECTION","CAPACITY","RESERVE","WATER_INFRASTRUCTURE","STRANDED_COST_PROTECTION","OTHER"];
 const EW_COST_BASES=["TARIFF","CONTRACT","COMMISSION_ORDER","SETTLEMENT","ESTIMATE"];
 const EW_COST_STATUSES=["ESTIMATED","PROPOSED","APPROVED","ACTUAL"];
-const EW_FIELD_LABEL={waterWithdrawnGallons:"water withdrawn",waterConsumedGallons:"water consumed",waterDischargedGallons:"water discharged",waterRecycledGallons:"reclaimed/recycled water"};
+const EW_FIELD_LABEL={waterReclaimedImportedGallons:"reclaimed water imported",waterWithdrawnGallons:"potable water withdrawn",waterConsumedGallons:"water consumed",waterDischargedGallons:"water discharged",waterRecycledGallons:"reclaimed/recycled water"};
 
 const ewNum=v=>v==null?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:2});
 const ewQty=(v,u)=>v==null?"No data":`${ewNum(v)} ${u}`;
@@ -20993,7 +20996,7 @@ function useEwList(path,version,enabled=true){
 }
 
 function EwStatusBadge({status}){
-  const c={VERIFIED:SH.green,APPROVED:SH.green,ACTUAL:SH.green,ACTIVE:SH.green,INCOMPLETE:SH.gold,UNBALANCED:SH.red,DENIED:SH.red,EXPIRED:T_E.dim,WITHDRAWN:T_E.dim,NO_DATA:T_E.dim,FILED:SH.teal,IN_PROGRESS:SH.purple,PROPOSED:SH.purple,ESTIMATED:SH.gold}[status]||SH.purple;
+  const c={VERIFIED:SH.green,COMPLETE:SH.green,APPROVED:SH.green,ACTUAL:SH.green,ACTIVE:SH.green,REVIEW:SH.gold,PARTIAL:SH.gold,UNVERIFIED:SH.red,UNAVAILABLE:T_E.dim,INCOMPLETE:SH.gold,UNBALANCED:SH.red,DENIED:SH.red,EXPIRED:T_E.dim,WITHDRAWN:T_E.dim,NO_DATA:T_E.dim,FILED:SH.teal,IN_PROGRESS:SH.purple,PROPOSED:SH.purple,ESTIMATED:SH.gold}[status]||SH.purple;
   return <Badge color={c}>{geoLabel(status)}</Badge>;
 }
 
@@ -21039,6 +21042,7 @@ function EwPortfolioPanel({portfolio,isMobile}){
           <td>{ewNum(c.shortfallMwh)}</td><td>{c.peakDeliveredMw==null?"—":`${ewNum(c.peakDeliveredMw)} / ${ewNum(c.contractedMw)}${c.peakPct!=null?` (${c.peakPct}%)`:""}`}</td><td>{ewNum(c.curtailedMwh)}</td></tr>)}</tbody>
       </table></div>}
       <div style={{fontSize:10,color:T_E.dim,marginTop:8,lineHeight:1.5}}>Only settlement periods that were reported are compared, so a missing month never counts as a shortfall. Contracted MWh uses the contract's stated annual MWh when entered, otherwise MW × hours × capacity factor within the delivery window.</div>
+      <EwProvenance calc={portfolio.calculation} formula={portfolio.calculation?Object.entries(portfolio.calculation.formulaVersions).filter(([k])=>["delivery","resourceMix"].includes(k)).map(([,v])=>v).join(", "):null}/>
     </PCard>
   </div>;
 }
@@ -21120,21 +21124,57 @@ function EwLoadReservePanel({portfolio,properties,canManage,send,version,isMobil
       </div>
       {r.meetsRequirementNow!=null&&<div style={{fontSize:11,marginTop:6,color:r.meetsRequirementNow?SH.green:SH.red}}>{r.meetsRequirementNow?"Meets":"Below"} the required reserve margin today.</div>}
       {r.meetsRequirementAtBuildout===false&&<div style={{fontSize:11,marginTop:4,color:SH.gold}}>At full build-out, {ewNum(r.buildoutFirmGapMw)} MW more firm capacity is needed to hold a {r.requiredMarginPct}% margin.</div>}
+      {r.missingInputs?.length>0&&<div style={{fontSize:10,marginTop:6,color:SH.gold}}>{r.calculable?"Partly calculated — missing":"Margin not calculated — missing"}: {r.missingInputs.join("; ")}.</div>}
       {r.missingFirmCapacity.length>0&&<div style={{fontSize:10,marginTop:6,color:T_E.dim}}>Not counted (no firm capacity entered): {r.missingFirmCapacity.map(m=>m.name).join(", ")}.</div>}
       <EwSiteSettings site={site} canManage={canManage} send={send} fields={["requiredReserveMarginPct"]}/>
+      <EwMetersCard site={site} canManage={canManage} send={send} isMobile={isMobile}/>
       <div style={{marginTop:14,fontSize:11,fontWeight:600,color:T_E.text}}>Load ramp schedule</div>
       {site.steps.length===0?<div style={{fontSize:11,color:T_E.dim,padding:"8px 0"}}>No ramp schedule yet.</div>:site.steps.map(s=><div key={s.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderBottom:`1px solid ${T_E.bord}33`,fontSize:11,color:T_E.muted,flexWrap:"wrap"}}>
         <span><strong style={{color:T_E.text}}>{ewDate(s.effectiveDate)}</strong> · {geoLabel(s.phase)} · {ewNum(s.plannedLoadMw)} MW avg{s.plannedPeakMw!=null?` · ${ewNum(s.plannedPeakMw)} MW peak`:""}{s.notes?` · ${s.notes}`:""}</span>
         {canManage&&<span style={{display:"flex",gap:6}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>{setEditing(s.id);setForm({propertyId:s.propertyId,effectiveDate:geoToDateInput(s.effectiveDate),phase:s.phase,plannedLoadMw:s.plannedLoadMw??"",plannedPeakMw:s.plannedPeakMw??"",notes:s.notes||""});}}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} onClick={async()=>{if(ewConfirm("this ramp step"))await send("DELETE",`${EW_API}/ramp-steps/${s.id}`,null,"Ramp step deleted.");}}>Delete</PBtn></span>}
       </div>)}
       {site.ramp.length>0&&<div style={{overflowX:"auto",marginTop:10}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:520}}>
-        <thead><tr style={{color:T_E.dim,textAlign:"left",textTransform:"uppercase",fontSize:9,letterSpacing:".04em"}}>{["Month","Phase","Planned MW","Actual MW","Variance","Data coverage"].map(h=><th key={h} style={{padding:"6px 8px 6px 0",fontWeight:600}}>{h}</th>)}</tr></thead>
+        <thead><tr style={{color:T_E.dim,textAlign:"left",textTransform:"uppercase",fontSize:9,letterSpacing:".04em"}}>{["Month","Phase","Planned MW","Actual MW","Load data","Variance","Data coverage"].map(h=><th key={h} style={{padding:"6px 8px 6px 0",fontWeight:600}}>{h}</th>)}</tr></thead>
         <tbody>{site.ramp.map(m=><tr key={m.month} style={{borderTop:`1px solid ${T_E.bord}33`,color:m.month>today?T_E.dim:T_E.muted}}>
           <td style={{padding:"6px 8px 6px 0",color:m.month===today?T_E.text:undefined,fontWeight:m.month===today?700:400}}>{m.month}{m.month>today?" (planned)":""}</td><td>{m.phase?geoLabel(m.phase):"—"}</td><td>{ewNum(m.plannedMw)}</td><td>{ewNum(m.actualMw)}</td>
+          <td>{m.month>today||!m.loadStatus?"—":<span title={m.meterCoveragePct!=null?`Counted meters cover ${m.meterCoveragePct}% of the site`:""}><EwStatusBadge status={m.loadStatus}/>{m.meterCoveragePct!=null&&m.meterCoveragePct<100?` ${m.meterCoveragePct}%`:""}</span>}</td>
           <td style={{color:m.variancePct==null?undefined:m.dataCoveragePct<50?T_E.dim:Math.abs(m.variancePct)<=10?SH.green:SH.gold}}>{m.variancePct==null?"—":`${m.variancePct>0?"+":""}${m.variancePct}%${m.dataCoveragePct<50?" (low data)":""}`}</td><td style={{color:m.month<=today&&m.dataCoveragePct<50?SH.gold:undefined}}>{m.month>today?"—":`${m.dataCoveragePct}%`}</td></tr>)}</tbody>
       </table></div>}
-      <div style={{fontSize:10,color:T_E.dim,marginTop:8,lineHeight:1.5}}>Actual load = site-level facility energy ÷ hours covered by readings (readings tied to a specific asset are excluded to avoid double counting). Months with readings covering under half the month are marked "low data". Firm capacity counts only entered firm MW from active/pending contracts and active microgrid resources.</div>
+      <div style={{fontSize:10,color:T_E.dim,marginTop:8,lineHeight:1.5}}>Actual load sums only top-level MAIN/SETTLEMENT meters (a preferred settlement meter is used alone); SUB and CHECK meters are never added, duplicate readings per meter and time are collapsed, and nothing is scaled up when meters cover less than the whole site. Sites without meters use site-level readings. Months with readings covering under half the month are marked "low data". Firm capacity counts only entered firm MW from active/pending contracts and active microgrid resources.</div>
     </PCard>;})}
+  </div>;
+}
+
+// ── Meters (inside Load & Reserve) ─────────────────────────────────────────
+const EW_METER_LEVELS=["MAIN","SETTLEMENT","SUB","CHECK"];
+function EwMetersCard({site,canManage,send,isMobile}){
+  const meters=site.meters||[];
+  const blank={name:"",meterLevel:"MAIN",parentMeterId:"",coveragePct:"100",intervalMinutes:"",effectiveFrom:"",effectiveTo:"",settlementPriority:"",preferredSettlement:false,utilityMeterNumber:""};
+  const [form,setForm]=React.useState(blank);
+  const [editing,setEditing]=React.useState(null);
+  const [open,setOpen]=React.useState(false);
+  const set=k=>v=>setForm(f=>({...f,[k]:v}));
+  const save=async()=>{const body={...form,effectiveFrom:geoDateToIso(form.effectiveFrom),effectiveTo:geoDateToIso(form.effectiveTo)};if(!editing)body.propertyId=site.property.id;const ok=editing?await send("PATCH",`${EW_API}/meters/${editing}`,body,"Meter updated."):await send("POST",`${EW_API}/meters`,body,"Meter added.");if(ok){setEditing(null);setForm(blank);}};
+  const name=id=>meters.find(m=>m.id===id)?.name||"—";
+  return <div style={{marginTop:14}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div style={{fontSize:11,fontWeight:600,color:T_E.text}}>Meters ({meters.length})</div>{canManage&&<PBtn sz="sm" v="ghost" T={T_E} onClick={()=>setOpen(o=>!o)}>{open?"Close":"Add meter"}</PBtn>}</div>
+    {meters.length===0?<div style={{fontSize:11,color:T_E.dim,padding:"6px 0"}}>No meters configured — actual load uses site-level readings.</div>:meters.map(m=><div key={m.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderBottom:`1px solid ${T_E.bord}33`,fontSize:11,color:T_E.muted,flexWrap:"wrap"}}>
+      <span><strong style={{color:T_E.text}}>{m.name}</strong> · {geoLabel(m.meterLevel)}{m.parentMeterId?` under ${name(m.parentMeterId)}`:""} · {ewNum(m.coveragePct)}% coverage · from {ewDate(m.effectiveFrom)}{m.effectiveTo?` to ${ewDate(m.effectiveTo)}`:""}{m.preferredSettlement?" · ":""}{m.preferredSettlement&&<Badge color={SH.teal}>Preferred settlement</Badge>}</span>
+      {canManage&&<span style={{display:"flex",gap:6}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>{setOpen(true);setEditing(m.id);setForm({...blank,...Object.fromEntries(Object.keys(blank).map(k=>[k,m[k]??blank[k]])),effectiveFrom:geoToDateInput(m.effectiveFrom),effectiveTo:geoToDateInput(m.effectiveTo),preferredSettlement:!!m.preferredSettlement});}}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} onClick={async()=>{if(ewConfirm(`meter "${m.name}"`))await send("DELETE",`${EW_API}/meters/${m.id}`,null,"Meter deleted.");}}>Delete</PBtn></span>}
+    </div>)}
+    {canManage&&open&&<div style={{...ewGrid(isMobile,4),marginTop:10,padding:12,background:T_E.surf,borderRadius:8}}>
+      <GeoField label="Meter name *">{ewInput(form.name,set("name"),{placeholder:"e.g. Utility revenue meter"})}</GeoField>
+      <GeoField label="Level">{ewSelect(form.meterLevel,set("meterLevel"),EW_METER_LEVELS)}</GeoField>
+      <GeoField label="Parent meter">{ewSelect(form.parentMeterId,set("parentMeterId"),meters.filter(m=>m.id!==editing),{blank:"None (top level)"})}</GeoField>
+      <GeoField label="Coverage of site %">{ewInput(form.coveragePct,set("coveragePct"),{type:"number",min:"0.1",max:"100",step:"0.1"})}</GeoField>
+      <GeoField label="Effective from *"><input type="date" style={GEO_FIELD_STYLE} value={form.effectiveFrom} onChange={e=>set("effectiveFrom")(e.target.value)}/></GeoField>
+      <GeoField label="Effective to"><input type="date" style={GEO_FIELD_STYLE} value={form.effectiveTo} onChange={e=>set("effectiveTo")(e.target.value)}/></GeoField>
+      <GeoField label="Interval minutes">{ewInput(form.intervalMinutes,set("intervalMinutes"),{type:"number",min:"1"})}</GeoField>
+      <GeoField label="Settlement priority">{ewInput(form.settlementPriority,set("settlementPriority"),{type:"number",min:"0",placeholder:"Lower wins"})}</GeoField>
+      <GeoField label="Utility meter #">{ewInput(form.utilityMeterNumber,set("utilityMeterNumber"))}</GeoField>
+      <label style={{display:"flex",gap:8,alignItems:"center",fontSize:11,color:T_E.text,cursor:"pointer",alignSelf:"end",paddingBottom:8}}><input type="checkbox" checked={!!form.preferredSettlement} onChange={e=>set("preferredSettlement")(e.target.checked)}/>Preferred settlement meter (authoritative)</label>
+      <div style={{gridColumn:"1 / -1",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><PBtn sz="sm" T={T_E} disabled={!form.name.trim()||!form.effectiveFrom} onClick={save}>{editing?"Save Meter":"Add Meter"}</PBtn>{editing&&<PBtn sz="sm" v="outline" T={T_E} onClick={()=>{setEditing(null);setForm(blank);}}>Cancel</PBtn>}<span style={{fontSize:10,color:T_E.dim}}>Main meters summed for site load can't cover more than 100% together; SUB meters need a parent.</span></div>
+    </div>}
   </div>;
 }
 
@@ -21234,31 +21274,52 @@ function EwCostsPanel({portfolio,properties,contracts,canManage,send,version,isM
 }
 
 // ── Water: direct cooling water + upstream generation water ────────────────
+// Value carrying the period's water evidence status (VERIFIED shows plain).
+function ewEvidence(v,status){
+  if(v==="No data"||status==="VERIFIED") return v;
+  return <span>{v} <span style={{fontSize:9,color:status==="REVIEW"?SH.gold:SH.red,fontWeight:700}}>{status==="REVIEW"?"REVIEW":"UNVERIFIED"}</span></span>;
+}
+function EwProvenance({calc,formula}){
+  if(!calc&&!formula) return null;
+  return <div style={{fontSize:9,color:T_E.dim,marginTop:10,fontFamily:"'JetBrains Mono',monospace"}}>{formula?`formula ${formula}`:""}{calc?.calculatedAt?` · calculated ${new Date(calc.calculatedAt).toLocaleString()}`:""}</div>;
+}
+
 function EwWaterPanel({portfolio,canManage,send,isMobile}){
   if(!portfolio) return <GeoEmpty>Loading…</GeoEmpty>;
-  const w=portfolio.water,claim=w.claim,d=w.direct,up=w.upstream;
-  const verified=claim.status==="VERIFIED";
-  const claimText={
-    VERIFIED:`Verified: every water reading in this period reports withdrawal, consumption, discharge and reclaimed water, and the balance closes within ${claim.tolerancePct}% (gap ${claim.balanceGapPct}%).`,
-    INCOMPLETE:`Not verified: ${claim.readingsWithWater-claim.readingsComplete} of ${claim.readingsWithWater} water readings are missing ${claim.missingFields.map(f=>EW_FIELD_LABEL[f]||f).join(", ")}. Verified water claims require withdrawal, consumption, discharge and reclaimed-water measurements.`,
-    UNBALANCED:`Not verified: withdrawal doesn't match consumption + discharge (gap ${claim.balanceGapPct}%, tolerance ${claim.tolerancePct}%). Check meters or missing flows.`,
-    NO_DATA:"No water readings in this period. Verified water claims require withdrawal, consumption, discharge and reclaimed-water measurements.",
-  }[claim.status];
-  const tag=v=>verified||v==="No data"?v:<span>{v} <span style={{fontSize:9,color:SH.gold,fontWeight:600}}>UNVERIFIED</span></span>;
+  const w=portfolio.water,claim=w.claim,d=w.direct,up=w.upstream,b=claim.balance;
+  const st=claim.verification_status;
+  const tone=st==="VERIFIED"?SH.green:st==="REVIEW"?SH.gold:SH.red;
+  const headline={
+    VERIFIED:"Verified — WUE, recycled-water share and water-saved figures can be shown as verified.",
+    REVIEW:"Needs review — figures are shown with a review flag; no verified badge.",
+    UNVERIFIED:"Not verified — verified water claims are suppressed until the issues below are fixed.",
+  }[st];
+  const tag=v=>ewEvidence(v,st);
   return <div style={{display:"grid",gap:14}}>
-    <div style={{padding:"12px 14px",borderRadius:10,border:`1px solid ${verified?SH.green:claim.status==="NO_DATA"?T_E.bord:SH.gold}55`,background:`${verified?SH.green:claim.status==="NO_DATA"?T_E.surf:SH.gold}12`,display:"flex",gap:10,alignItems:"flex-start"}}>
-      <EwStatusBadge status={claim.status}/><div style={{fontSize:11,color:T_E.text,lineHeight:1.6}}>{claimText}</div>
+    <div style={{padding:"12px 14px",borderRadius:10,border:`1px solid ${tone}55`,background:`${tone}12`}}>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><EwStatusBadge status={st}/><span style={{fontSize:12,color:T_E.text,fontWeight:600}}>{headline}</span>{claim.balance_variance_pct!=null&&<span style={{fontSize:11,color:T_E.muted}}>Balance variance {claim.balance_variance_pct}% (verified ≤ {claim.thresholds?.verified_max_pct}%, review ≤ {claim.thresholds?.review_max_pct}%)</span>}</div>
+      <ul style={{margin:"8px 0 0 18px",padding:0,fontSize:11,color:T_E.text,lineHeight:1.6}}>{claim.verification_reasons.map((x,i)=><li key={i}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:T_E.dim}}>{x.code}</span> {x.scope?<strong>{x.scope}: </strong>:null}{x.message}</li>)}</ul>
+      {claim.missing_measurements?.length>0&&st==="UNVERIFIED"&&<div style={{fontSize:11,color:SH.red,marginTop:6}}>Missing: {claim.missing_measurements.map(f=>EW_FIELD_LABEL[f]||f).join(", ")}.</div>}
+      <div style={{fontSize:10,color:T_E.dim,marginTop:6}}>Verified water claims require potable withdrawal, reclaimed water imported, water recycled on site, consumption and discharge on every water reading, and a balance of withdrawn + reclaimed imported ≈ consumed + discharged + storage change.</div>
+      <EwProvenance calc={portfolio.calculation} formula={claim.formula_version}/>
     </div>
+    {w.siteClaims?.length>1&&<PCard T={T_E} title="Water Evidence by Site (portfolio shows the least-trusted)"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:460}}>
+      <thead><tr style={{color:T_E.dim,textAlign:"left",textTransform:"uppercase",fontSize:9,letterSpacing:".04em"}}>{["Site","Status","Variance","Complete / water readings","Missing"].map(h=><th key={h} style={{padding:"6px 8px 6px 0",fontWeight:600}}>{h}</th>)}</tr></thead>
+      <tbody>{w.siteClaims.map(c=><tr key={c.propertyId} style={{borderTop:`1px solid ${T_E.bord}33`,color:T_E.muted}}><td style={{padding:"6px 8px 6px 0",color:T_E.text}}>{c.label}</td><td><EwStatusBadge status={c.verification_status}/></td><td>{c.balance_variance_pct==null?"—":`${c.balance_variance_pct}%`}</td><td>{c.readings_complete} / {c.readings_with_water}</td><td>{c.missing_measurements.map(f=>EW_FIELD_LABEL[f]||f).join(", ")||"—"}</td></tr>)}</tbody>
+    </table></div></PCard>}
     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
       <PCard T={T_E} title="Direct Cooling Water (on site)">
-        <GeoRow k="New water withdrawn" v={ewQty(d.withdrawnGallons,"gal")}/>
-        <GeoRow k="Water consumed (evaporated / not returned)" v={ewQty(d.consumedGallons,"gal")}/>
-        <GeoRow k="Water discharged (returned)" v={ewQty(d.dischargedGallons,"gal")}/>
-        <GeoRow k="Reclaimed / recycled water used" v={ewQty(d.recycledGallons,"gal")}/>
+        <GeoRow k="Potable water withdrawn" v={ewQty(d.withdrawnGallons,"gal")}/>
+        <GeoRow k="Reclaimed water imported" v={ewQty(d.reclaimedImportedGallons,"gal")}/>
+        <GeoRow k="Water recycled on site (internal loop)" v={ewQty(d.recycledGallons,"gal")}/>
+        <GeoRow k="Water consumed (not returned)" v={ewQty(d.consumedGallons,"gal")}/>
+        <GeoRow k="Water discharged" v={ewQty(d.dischargedGallons,"gal")}/>
+        <GeoRow k="Storage change" v={ewQty(d.storageChangeGallons,"gal")}/>
         <GeoRow k="WUE (L per IT kWh)" v={tag(d.wueLitersPerItKwh==null?"No data":ewNum(d.wueLitersPerItKwh))}/>
         <GeoRow k="Recycled water share" v={tag(ewPct(d.recycledWaterSharePct))}/>
+        <GeoRow k="Non-potable share (reclaimed + recycled)" v={tag(ewPct(d.nonPotableSharePct))}/>
         <GeoRow k="Water saved vs. baseline" v={tag(ewQty(d.savedVsBaselineGallons,"gal"))}/>
-        {claim.balance&&<div style={{fontSize:10,color:T_E.dim,marginTop:8}}>Balance (complete readings): withdrawn {ewNum(claim.balance.withdrawnGallons)} gal vs consumed + discharged {ewNum(claim.balance.consumedGallons+claim.balance.dischargedGallons)} gal.</div>}
+        {b&&<div style={{fontSize:10,color:T_E.dim,marginTop:8,lineHeight:1.5}}>Balance (complete readings): inputs {ewNum(b.inputs_gallons)} gal (potable {ewNum(b.withdrawn_gallons)} + reclaimed imported {ewNum(b.reclaimed_imported_gallons)}) vs outputs {ewNum(b.outputs_gallons)} gal (consumed {ewNum(b.consumed_gallons)} + discharged {ewNum(b.discharged_gallons)} + storage {ewNum(b.storage_change_gallons)}). On-site recycling ({ewNum(b.recycled_onsite_gallons)} gal) is not an input.</div>}
       </PCard>
       <PCard T={T_E} title="Upstream Generation Water">
         <GeoRow k="Upstream water consumed" v={ewQty(up.upstreamGallons,"gal")}/>
@@ -21305,6 +21366,7 @@ function EntGeothermal({setTab}) {
   const [csv,setCsv]=React.useState(null); // {fileName, rows, errors, uploading, done, failed, result}
   const [ewData,setEwData]=React.useState(null);
   const [version,setVersion]=React.useState(0); // bumped after every save so panels refetch
+  const [meters]=useEwList(`${EW_API}/meters`,version);
 
   // ── Query ranges ───────────────────────────────────────────────────────────
   const customValid=range!=="custom"||(customFrom&&customTo&&customFrom<=customTo);
@@ -21391,7 +21453,7 @@ function EntGeothermal({setTab}) {
 
   // ── PPA actions ────────────────────────────────────────────────────────────
   const ppaBody=()=>({...ppaForm,signedAt:geoDateToIso(ppaForm.signedAt),deliveryStartAt:geoDateToIso(ppaForm.deliveryStartAt),deliveryEndAt:geoDateToIso(ppaForm.deliveryEndAt)});
-  const editPpa=p=>{setEditingPpaId(p.id);setPpaForm({propertyId:p.propertyId||"",assetId:p.assetId||"",name:p.name||"",seller:p.seller||"",utility:p.utility||"",status:p.status,resourceType:p.resourceType||"GEOTHERMAL",contractType:p.contractType||"PPA",contractedAnnualMwh:p.contractedAnnualMwh??"",firmCapacityMw:p.firmCapacityMw??"",waterIntensityGalPerMwh:p.waterIntensityGalPerMwh??"",waterIntensitySource:p.waterIntensitySource||"",contractedMw:p.contractedMw??"",termYears:p.termYears??"",capacityFactorPct:p.capacityFactorPct??"90",pricePerMwh:p.pricePerMwh??"",annualEscalationPct:p.annualEscalationPct??"",regulatoryApproval:p.regulatoryApproval||"",signedAt:geoToDateInput(p.signedAt),deliveryStartAt:geoToDateInput(p.deliveryStartAt),deliveryEndAt:geoToDateInput(p.deliveryEndAt),notes:p.notes||""});};
+  const editPpa=p=>{setEditingPpaId(p.id);setPpaForm({propertyId:p.propertyId||"",assetId:p.assetId||"",name:p.name||"",seller:p.seller||"",utility:p.utility||"",status:p.status,resourceType:p.resourceType||"GEOTHERMAL",contractType:p.contractType||"PPA",contractedAnnualMwh:p.contractedAnnualMwh??"",firmCapacityMw:p.firmCapacityMw??"",waterIntensityGalPerMwh:p.waterIntensityGalPerMwh??"",waterIntensitySource:p.waterIntensitySource||"",evidenceReference:p.evidenceReference||"",contractedMw:p.contractedMw??"",termYears:p.termYears??"",capacityFactorPct:p.capacityFactorPct??"90",pricePerMwh:p.pricePerMwh??"",annualEscalationPct:p.annualEscalationPct??"",regulatoryApproval:p.regulatoryApproval||"",signedAt:geoToDateInput(p.signedAt),deliveryStartAt:geoToDateInput(p.deliveryStartAt),deliveryEndAt:geoToDateInput(p.deliveryEndAt),notes:p.notes||""});};
   const resetPpa=()=>{setEditingPpaId(null);setPpaForm(geoBlankPpa);};
   const savePpa=async()=>{
     const ok=editingPpaId
@@ -21403,11 +21465,11 @@ function EntGeothermal({setTab}) {
 
   // ── Reading actions ────────────────────────────────────────────────────────
   const readingHasValue=GEO_FIELD_KEYS.some(k=>String(readingForm[k]??"").trim()!=="");
-  const editReading=r=>{setEditingReadingId(r.id);setReadingForm({propertyId:r.propertyId,assetId:r.assetId||"",recordedAt:geoToLocalInput(r.recordedAt),intervalMinutes:String(r.intervalMinutes??60),...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,r[k]??""]))});if(typeof window!=="undefined")window.scrollTo?.({top:0,behavior:"smooth"});};
+  const editReading=r=>{setEditingReadingId(r.id);setReadingForm({propertyId:r.propertyId,assetId:r.assetId||"",meterId:r.meterId||"",recordedAt:geoToLocalInput(r.recordedAt),intervalMinutes:String(r.intervalMinutes??60),...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,r[k]??""]))});if(typeof window!=="undefined")window.scrollTo?.({top:0,behavior:"smooth"});};
   const resetReading=()=>{setEditingReadingId(null);setReadingForm(geoBlankReading());};
   const saveReading=async()=>{
     // Blank stays blank: the API stores it as "not measured", never zero.
-    const body={...readingForm,recordedAt:new Date(readingForm.recordedAt).toISOString(),assetId:readingForm.assetId||null};
+    const body={...readingForm,recordedAt:new Date(readingForm.recordedAt).toISOString(),assetId:readingForm.assetId||null,meterId:readingForm.meterId||null};
     for(const k of GEO_FIELD_KEYS){const v=String(body[k]??"").trim();body[k]=v===""?null:v;}
     const ok=editingReadingId
       ?await send("PATCH",`/api/enterprise/energy-water/readings/${editingReadingId}`,body,"Reading updated.")
@@ -21417,7 +21479,7 @@ function EntGeothermal({setTab}) {
   const deleteReading=async r=>{if(confirmDelete(`the reading from ${new Date(r.recordedAt).toLocaleString()}`)){const ok=await send("DELETE",`/api/enterprise/energy-water/readings/${r.id}`,null,"Reading deleted.");if(ok&&editingReadingId===r.id)resetReading();}};
 
   // ── CSV import ─────────────────────────────────────────────────────────────
-  const csvHeaders=["propertyId","property","assetId","asset","recordedAt","intervalMinutes",...GEO_FIELD_KEYS,"externalId"];
+  const csvHeaders=["propertyId","property","assetId","asset","meterId","meter","recordedAt","intervalMinutes","waterUnit",...GEO_FIELD_KEYS,"externalId"];
   const downloadTemplate=()=>{
     const p=properties[0];
     const example={propertyId:p?.id||"",property:p?"":"Your property name",recordedAt:new Date().toISOString().slice(0,13)+":00:00Z",intervalMinutes:"60"};
@@ -21453,13 +21515,18 @@ function EntGeothermal({setTab}) {
         if(!rawTime||Number.isNaN(when.getTime()))issues.push("recordedAt must be a date/time, e.g. 2026-10-01T14:00:00Z");
         const interval=get("intervalMinutes")===""?60:Number(get("intervalMinutes"));
         if(!Number.isInteger(interval)||interval<1||interval>44640)issues.push("intervalMinutes must be a whole number 1–44640");
-        const reading={propertyId,assetId:assetId||null,intervalMinutes:interval,source:"CSV"};
+        let meterId=get("meterId");
+        if(!meterId&&get("meter")){const m=meters.find(x=>x.propertyId===propertyId&&x.name.trim().toLowerCase()===get("meter").toLowerCase());meterId=m?.id||"";if(!meterId)issues.push(`unknown meter "${get("meter")}" at this site`);}
+        else if(meterId&&!meters.some(x=>x.id===meterId&&x.propertyId===propertyId))issues.push(`meter "${meterId}" isn't at this site`);
+        const unit=get("waterUnit")||"gal";
+        if(!["gal","L","m3"].includes(unit))issues.push(`waterUnit must be gal, L or m3`);
+        const reading={propertyId,assetId:assetId||null,meterId:meterId||null,intervalMinutes:interval,source:"CSV",...(unit!=="gal"&&{waterUnit:unit})};
         let measured=0;
         for(const k of GEO_FIELD_KEYS){
           const v=get(k).replaceAll(",","");
           if(v===""){reading[k]=null;continue;}
           const num=Number(v);
-          if(!Number.isFinite(num)||num<0)issues.push(`${k} must be a number ≥ 0`);else{reading[k]=num;measured++;}
+          if(!Number.isFinite(num)||(num<0&&!GEO_SIGNED.has(k)))issues.push(`${k} must be a number${GEO_SIGNED.has(k)?"":" ≥ 0"}`);else{reading[k]=num;measured++;}
         }
         if(!measured)issues.push("at least one measurement is required");
         if(issues.length){errors.push({line,issues});return;}
@@ -21503,8 +21570,9 @@ function EntGeothermal({setTab}) {
   const geoAssets=assets.filter(a=>a.type!=="CHILLER"&&a.type!=="GRID_CONNECTION"&&a.type!=="GROUND_SOURCE_HEAT_PUMP");
   const panelProps={portfolio:ewData,properties,contracts:ppas,assets,canManage,send,version,isMobile,propertyFilter};
   const claim=metrics.waterClaim;
-  const waterVerified=claim?.status==="VERIFIED";
-  const unverified=v=>waterVerified||v==="No data"?v:<span>{v} <span style={{fontSize:9,color:SH.gold,fontWeight:600}}>UNVERIFIED</span></span>;
+  const waterStatus=claim?.verification_status||"UNVERIFIED";
+  const waterVerified=waterStatus==="VERIFIED";
+  const unverified=v=>ewEvidence(v,waterStatus);
   const geoMix=ewData?.supply?.mix?.resources?.find(r=>r.resource==="GEOTHERMAL");
   const endpoint=`${typeof window!=="undefined"?window.location.origin:"https://gridguide.ai"}/api/enterprise/energy-water/readings`;
   const twoCol={display:"grid",gridTemplateColumns:"1fr 1fr",gap:8};
@@ -21528,7 +21596,7 @@ function EntGeothermal({setTab}) {
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":isTablet?"repeat(3,1fr)":"repeat(5,1fr)",gap:10,marginBottom:16}}>
         <StatCard icon="leaf" label="Carbon-free delivered" value={ewData?.supply?.mix?.carbonFreeDeliveredPct==null?"—":`${ewData.supply.mix.carbonFreeDeliveredPct}%`} color={SH.green} T={T_E}/>
         <StatCard icon="trending" label="PUE" value={eff.pue==null?"—":eff.pue} color={SH.purple} T={T_E}/>
-        <StatCard icon="droplet" label={`WUE L/IT kWh${eff.wueLitersPerItKwh!=null&&!waterVerified?" (unverified)":""}`} value={eff.wueLitersPerItKwh==null?"—":eff.wueLitersPerItKwh} color={SH.teal} T={T_E}/>
+        <StatCard icon="droplet" label={`WUE L/IT kWh${eff.wueLitersPerItKwh!=null&&!waterVerified?` (${waterStatus==="REVIEW"?"review":"unverified"})`:""}`} value={eff.wueLitersPerItKwh==null?"—":eff.wueLitersPerItKwh} color={SH.teal} T={T_E}/>
         <StatCard icon="leaf" label="CO₂ Avoided" value={qty(tot.carbonAvoidedKg,"kg")} color={SH.green} T={T_E}/>
         <StatCard icon="file" label="Contracted Capacity" value={`${number(portfolio.contractedMw)} MW`} color={SH.gold} T={T_E}/>
       </div>
@@ -21544,7 +21612,7 @@ function EntGeothermal({setTab}) {
           <GeoRow k="Sites below required reserve margin" v={ewData?(()=>{const s=ewData.sites.filter(x=>x.reserve.meetsRequirementNow===false).length;const known=ewData.sites.filter(x=>x.reserve.meetsRequirementNow!==null).length;return known?`${s} of ${known}`:"No data";})():"—"}/>
           <GeoRow k="Overdue permits & milestones" v={ewData?<span style={{color:ewData.regulatory.overdue.length?SH.red:undefined}}>{ewData.regulatory.overdue.length}</span>:"—"}/>
           <GeoRow k="Customer-funded share of costs" v={ewData?.costs?.customerSharePct==null?"No data":`${ewData.costs.customerSharePct}%`}/>
-          <GeoRow k="Water claims" v={<EwStatusBadge status={claim?.status||"NO_DATA"}/>}/>
+          <GeoRow k="Water claims" v={<EwStatusBadge status={waterStatus}/>}/>
         </PCard>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.1fr .9fr",gap:14}}>
@@ -21554,7 +21622,7 @@ function EntGeothermal({setTab}) {
             <GeoRow k="Water saved vs. baseline" v={unverified(qty(tot.waterSavedGallons,"gal"))}/>
             <GeoRow k="Cooling share of facility energy" v={eff.coolingSharePct==null?"No data":`${eff.coolingSharePct}%`}/>
             <GeoRow k="Recycled Water Share (%)" v={unverified(eff.recycledWaterSharePct==null?"No data":`${eff.recycledWaterSharePct}%`)}/>
-            <div style={{fontSize:10,color:T_E.dim,lineHeight:1.5,marginTop:10}}>Ratios only use readings that reported both of their inputs. "(n of N)" means only some readings in this period reported that measurement. Water figures are marked unverified until withdrawal, consumption, discharge and reclaimed water are all measured and balance (see the Water tab).</div>
+            <div style={{fontSize:10,color:T_E.dim,lineHeight:1.5,marginTop:10}}>Ratios only use readings that reported both of their inputs. "(n of N)" means only some readings in this period reported that measurement. Water figures carry the period's evidence status (VERIFIED / REVIEW / UNVERIFIED) — see the Water tab.</div>
           </>}
         </PCard>
         <PCard T={T_E} title="Portfolio & Contracts">
@@ -21597,6 +21665,7 @@ function EntGeothermal({setTab}) {
           {(p.deliveryStartAt||p.deliveryEndAt)&&<div style={{fontSize:10,color:T_E.dim,marginTop:3}}>Delivery {p.deliveryStartAt?new Date(p.deliveryStartAt).toLocaleDateString(undefined,{timeZone:"UTC"}):"?"} – {p.deliveryEndAt?new Date(p.deliveryEndAt).toLocaleDateString(undefined,{timeZone:"UTC"}):"?"}{p.regulatoryApproval?` · Approval: ${geoLabel(p.regulatoryApproval)}`:""}</div>}</div>
           <Badge color={p.status==="ACTIVE"?SH.green:p.status==="PENDING_APPROVAL"?SH.gold:p.status==="EXPIRED"||p.status==="TERMINATED"?T_E.dim:SH.purple}>{geoLabel(p.status)}</Badge></div>
         <div style={{fontSize:11,color:p.valueEstimate?SH.green:T_E.dim,marginTop:6}}>{p.valueEstimate?`Estimated contract value: ${money(p.valueEstimate.estimatedContractValue)}`:"Dollar value unavailable — price per MWh was not disclosed."}</div>
+        <div style={{fontSize:10,color:p.evidenceReference?T_E.dim:SH.gold,marginTop:3}}>{p.evidenceReference?`Evidence: ${p.evidenceReference}`:"No evidence reference recorded"}</div>
         {p.waterIntensityGalPerMwh!=null&&<div style={{fontSize:10,color:T_E.dim,marginTop:3}}>Upstream water: {number(p.waterIntensityGalPerMwh)} gal/MWh{p.waterIntensitySource?` (${p.waterIntensitySource})`:""}</div>}
         {p.notes&&<div style={{fontSize:10,color:T_E.muted,marginTop:4,whiteSpace:"pre-wrap"}}>{p.notes}</div>}
         {canManage&&<div style={{display:"flex",gap:6,marginTop:8}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>editPpa(p)}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} disabled={saving} onClick={()=>deletePpa(p)}>Delete</PBtn></div>}
@@ -21612,6 +21681,7 @@ function EntGeothermal({setTab}) {
         <div style={twoCol}><GeoField label="Price $/MWh (optional)"><input type="number" min="0" step="0.01" style={fieldStyle} value={ppaForm.pricePerMwh} onChange={e=>setPpaForm(f=>({...f,pricePerMwh:e.target.value}))}/></GeoField><GeoField label="Annual escalation %"><input type="number" step="0.1" style={fieldStyle} value={ppaForm.annualEscalationPct} onChange={e=>setPpaForm(f=>({...f,annualEscalationPct:e.target.value}))}/></GeoField></div>
         <div style={twoCol}><GeoField label="Capacity factor %"><input type="number" min="1" max="100" style={fieldStyle} value={ppaForm.capacityFactorPct} onChange={e=>setPpaForm(f=>({...f,capacityFactorPct:e.target.value}))}/></GeoField><GeoField label="Signed"><input type="date" style={fieldStyle} value={ppaForm.signedAt} onChange={e=>setPpaForm(f=>({...f,signedAt:e.target.value}))}/></GeoField></div>
         <div style={twoCol}><GeoField label="Delivery start"><input type="date" style={fieldStyle} value={ppaForm.deliveryStartAt} onChange={e=>setPpaForm(f=>({...f,deliveryStartAt:e.target.value}))}/></GeoField><GeoField label="Delivery end"><input type="date" style={fieldStyle} value={ppaForm.deliveryEndAt} onChange={e=>setPpaForm(f=>({...f,deliveryEndAt:e.target.value}))}/></GeoField></div>
+        <GeoField label="Evidence (contract, tariff sheet or filing)"><input style={fieldStyle} value={ppaForm.evidenceReference} placeholder="e.g. Executed PPA §4.2, PSC Docket 24-123" onChange={e=>setPpaForm(f=>({...f,evidenceReference:e.target.value}))}/></GeoField>
         <div style={twoCol}><GeoField label="Upstream water gal/MWh"><input type="number" min="0" step="0.01" style={fieldStyle} value={ppaForm.waterIntensityGalPerMwh} placeholder="Not set" onChange={e=>setPpaForm(f=>({...f,waterIntensityGalPerMwh:e.target.value}))}/></GeoField><GeoField label="Water intensity source"><input style={fieldStyle} value={ppaForm.waterIntensitySource} placeholder="Citation" onChange={e=>setPpaForm(f=>({...f,waterIntensitySource:e.target.value}))}/></GeoField></div>
         <GeoField label="Notes"><textarea rows={3} style={{...fieldStyle,resize:"vertical"}} value={ppaForm.notes} onChange={e=>setPpaForm(f=>({...f,notes:e.target.value}))}/></GeoField>
         <PBtn T={T_E} full disabled={saving||!ppaForm.name.trim()||!ppaForm.seller.trim()||!ppaForm.contractedMw||!ppaForm.termYears} onClick={savePpa}>{saving?"Saving…":editingPpaId?"Save Changes":"Add Contract"}</PBtn>
@@ -21631,8 +21701,9 @@ function EntGeothermal({setTab}) {
         <GeoField label="Property *">{select(readingForm.propertyId,v=>setReadingForm(f=>({...f,propertyId:v})),properties,{blank:"Select property"})}</GeoField>
         <GeoField label="Recorded at *"><input type="datetime-local" style={fieldStyle} value={readingForm.recordedAt} onChange={e=>setReadingForm(f=>({...f,recordedAt:e.target.value}))}/></GeoField>
         <GeoField label="Energy asset">{select(readingForm.assetId,v=>setReadingForm(f=>({...f,assetId:v})),assets,{blank:"No specific asset"})}</GeoField>
+        <GeoField label="Meter">{select(readingForm.meterId,v=>setReadingForm(f=>({...f,meterId:v})),meters.filter(m=>m.propertyId===readingForm.propertyId).map(m=>[m.id,`${m.name} (${geoLabel(m.meterLevel)})`]),{blank:"No meter / site-level"})}</GeoField>
         <GeoField label="Interval minutes"><input type="number" min="1" max="44640" style={fieldStyle} value={readingForm.intervalMinutes} onChange={e=>setReadingForm(f=>({...f,intervalMinutes:e.target.value}))}/></GeoField>
-        {GEO_MEASUREMENTS.map(([key,,,label])=><GeoField key={key} label={label}><input type="number" min="0" step="0.001" placeholder="Not measured" style={fieldStyle} value={readingForm[key]} onChange={e=>setReadingForm(f=>({...f,[key]:e.target.value}))}/></GeoField>)}
+        {GEO_MEASUREMENTS.map(([key,,,label])=><GeoField key={key} label={label}><input type="number" min={GEO_SIGNED.has(key)?undefined:"0"} step="0.001" placeholder="Not measured" style={fieldStyle} value={readingForm[key]} onChange={e=>setReadingForm(f=>({...f,[key]:e.target.value}))}/></GeoField>)}
         <div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <PBtn T={T_E} disabled={saving||!readingForm.propertyId||!readingForm.recordedAt||!readingHasValue} onClick={saveReading}>{saving?"Saving…":editingReadingId?"Save Changes":"Save Reading"}</PBtn>
           <span style={{fontSize:10,color:T_E.dim}}>Leave anything you didn't measure blank — it's recorded as "No data", not zero. At least one value is required.</span>

@@ -51,3 +51,30 @@ test("readings accept water discharge", () => {
   const r = g.readingCreateSchema.parse({ propertyId: "p", recordedAt: "2026-01-01T00:00:00Z", waterDischargedGallons: "290" });
   assert.equal(r.waterDischargedGallons, 290);
 });
+
+test("water volumes in litres or m³ are normalized to gallons with provenance", () => {
+  const base = { propertyId: "p", recordedAt: "2026-01-01T00:00:00Z" };
+  const { rows } = g.validateReadingsBody({ readings: [
+    { ...base, waterConsumedGallons: 3785.411784, waterUnit: "L" },
+    { ...base, waterConsumedGallons: 1, waterUnit: "m3" },
+    { ...base, waterConsumedGallons: 10 },
+  ] });
+  assert.equal(rows[0].waterConsumedGallons, 1000);
+  assert.deepEqual(rows[0].metadata.provenance, { waterInputUnit: "L", factorToGallons: 1 / 3.785411784 });
+  assert.equal(Math.round(rows[1].waterConsumedGallons * 1000) / 1000, 264.172);
+  assert.equal(rows[2].waterConsumedGallons, 10);
+  assert.equal(rows[2].metadata.provenance.waterInputUnit, "gal");
+  assert.equal("waterUnit" in rows[0], false);
+});
+
+test("storage change may be negative; other water fields may not", () => {
+  const base = { propertyId: "p", recordedAt: "2026-01-01T00:00:00Z" };
+  assert.equal(g.readingCreateSchema.safeParse({ ...base, waterStorageChangeGallons: -50 }).success, true);
+  assert.equal(g.readingCreateSchema.safeParse({ ...base, waterReclaimedImportedGallons: -50 }).success, false);
+});
+
+test("readings accept a meterId; contracts accept an evidence reference", () => {
+  const r = g.readingCreateSchema.parse({ propertyId: "p", recordedAt: "2026-01-01T00:00:00Z", meterId: "m1", facilityEnergyKwh: 1 });
+  assert.equal(r.meterId, "m1");
+  assert.equal(g.ppaCreateSchema.parse({ name: "A", seller: "B", contractedMw: 1, termYears: 1, evidenceReference: "PSC Docket 24-123" }).evidenceReference, "PSC Docket 24-123");
+});

@@ -2620,6 +2620,7 @@ model EnterpriseOrg {
   regulatoryMilestones   EnterpriseRegulatoryMilestone[]
   costAllocations        EnterpriseCostAllocation[]
   contractDeliveries     EnterpriseContractDelivery[]
+  meters                 EnterpriseMeter[]
   importBatches          EnterpriseImportBatch[]
   campaigns              EnterpriseCampaign[]
 
@@ -2653,6 +2654,7 @@ model EnterpriseProperty {
   loadRampSteps          EnterpriseLoadRampStep[]
   regulatoryMilestones   EnterpriseRegulatoryMilestone[]
   costAllocations        EnterpriseCostAllocation[]
+  meters                 EnterpriseMeter[]
 
   @@index([orgId])
   @@index([status])
@@ -2711,6 +2713,7 @@ model EnterpriseGeothermalPpa {
   firmCapacityMw      Float? // accredited firm capacity counted toward reserve margin; null = not counted
   waterIntensityGalPerMwh Float? // upstream water consumed per MWh generated, user-sourced
   waterIntensitySource    String?
+  evidenceReference       String? // executed contract, tariff sheet or filing that the terms come from
   contractedMw        Float
   termYears           Int
   capacityFactorPct   Float     @default(90)
@@ -2753,8 +2756,11 @@ model EnterpriseSustainabilityReading {
   waterWithdrawnGallons        Float?
   waterConsumedGallons         Float?
   baselineWaterConsumedGallons Float?
-  waterRecycledGallons         Float?
-  waterDischargedGallons       Float? // returned to sewer / environment; needed for a verified water balance
+  waterRecycledGallons         Float? // recycled ON SITE (internal loop) — never counted as an input
+  waterDischargedGallons       Float? // leaving the site as discharge; needed for a verified water balance
+  waterReclaimedImportedGallons Float? // non-potable reclaimed water delivered to the site (external input)
+  waterStorageChangeGallons    Float? // signed change in on-site storage over the interval
+  meterId                      String? // which meter produced this reading (see EnterpriseMeter)
   carbonAvoidedKg              Float?
   // Measurements are nullable: null = not reported (shown as "No data"), never zero.
   source                       String   @default("MANUAL") // MANUAL | CSV | API | METER | DCIM | BMS
@@ -2766,8 +2772,10 @@ model EnterpriseSustainabilityReading {
   org      EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   property EnterpriseProperty     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   asset    EnterpriseEnergyAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  meter    EnterpriseMeter?       @relation(fields: [meterId], references: [id], onDelete: SetNull)
 
   @@unique([orgId, source, externalId])
+  @@index([meterId, recordedAt])
   @@index([orgId, recordedAt])
   @@index([propertyId, recordedAt])
   @@index([assetId, recordedAt])
@@ -2880,6 +2888,39 @@ model EnterpriseContractDelivery {
   @@index([orgId])
   @@index([contractId, periodStart])
 }
+// Electricity meters at a site. Actual site load sums only top-level MAIN /
+// SETTLEMENT meters whose coverage doesn't overlap; SUB and CHECK meters are
+// never added to site load. A preferred settlement meter, when designated, is
+// authoritative on its own. See lib/energy-water-meters.mjs.
+model EnterpriseMeter {
+  id                  String    @id @default(cuid())
+  orgId               String
+  propertyId          String
+  name                String
+  meterLevel          String // MAIN | SETTLEMENT | SUB | CHECK
+  parentMeterId       String?
+  coveragePct         Float     @default(100) // share of the site's load this meter measures
+  intervalMinutes     Int?
+  effectiveFrom       DateTime
+  effectiveTo         DateTime? // exclusive; null = still in service
+  settlementPriority  Int? // lower wins when several settlement meters are candidates
+  preferredSettlement Boolean   @default(false) // authoritative utility/settlement meter
+  utilityMeterNumber  String?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  org      EnterpriseOrg                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  property EnterpriseProperty                @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  parent   EnterpriseMeter?                  @relation("MeterHierarchy", fields: [parentMeterId], references: [id], onDelete: SetNull)
+  children EnterpriseMeter[]                 @relation("MeterHierarchy")
+  readings EnterpriseSustainabilityReading[]
+
+  @@index([orgId])
+  @@index([propertyId])
+  @@index([parentMeterId])
+}
+
 
 
 model EnterpriseHomeownerInvite {

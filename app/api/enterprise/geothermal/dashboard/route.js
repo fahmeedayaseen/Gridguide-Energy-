@@ -56,7 +56,9 @@ export async function GET(request) {
     prisma.enterpriseProperty.findMany({ where: { orgId }, select: { id: true, name: true, type: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const { metrics, trend } = metricsFromDailySqlRows(dailyRows);
+  const { metrics, trend, siteWaterClaims } = metricsFromDailySqlRows(dailyRows, {
+    propertyLabels: Object.fromEntries(properties.map((p) => [p.id, p.name])),
+  });
   const ppasWithValue = ppas.map((ppa) => ({ ...ppa, valueEstimate: estimatePpaValue(ppa) }));
   const knownContractValue = ppasWithValue.reduce((total, ppa) => total + (ppa.valueEstimate?.estimatedContractValue || 0), 0);
   const pricedCount = ppasWithValue.filter((p) => p.valueEstimate).length;
@@ -77,5 +79,6 @@ export async function GET(request) {
     assets,
     ppas: ppasWithValue,
     trend,
+    siteWaterClaims,
   });
 }

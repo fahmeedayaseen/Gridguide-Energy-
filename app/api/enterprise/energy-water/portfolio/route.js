@@ -17,7 +17,8 @@ import { prisma } from "@/lib/db.js";
 import { ok, err } from "@/lib/auth.js";
 import { resolveEnterpriseActor } from "@/lib/enterprise-api-keys.js";
 import { checkOwnedLinks } from "@/lib/geothermal-store.js";
-import { buildDailyAggregateSql, metricsFromDailySqlRows } from "@/lib/geothermal-metrics.mjs";
+import { buildDailyAggregateSql, metricsFromDailySqlRows, WATER_FORMULA_VERSION } from "@/lib/geothermal-metrics.mjs";
+import { siteMonthlyLoad, LOAD_FORMULA_VERSION } from "@/lib/energy-water-meters.mjs";
 import {
   deliveryPerformance, resourceMix, reserveMargin, rampComparison, costAllocationSummary,
   upstreamWater, milestoneSummary,
@@ -59,19 +60,29 @@ export async function GET(request) {
   const byProperty = propertyId ? { propertyId } : {};
   const readingRange = { orgId, recordedAt: { gte: range.from, lt: range.to }, ...byProperty };
 
+  // Monthly facility energy per (site, meter). Duplicate readings for the same
+  // meter and timestamp are collapsed deterministically (latest update wins),
+  // and meter selection/overlap rules are applied in siteMonthlyLoad().
+  // Readings with no meter count only when they're site-level (no asset).
   const loadSqlParams = [orgId, iso(range.from), iso(range.to)];
-  let loadSql = `SELECT "propertyId", to_char("recordedAt", 'YYYY-MM') AS "month",
-      SUM("facilityEnergyKwh")::float8 AS "kwh", SUM("intervalMinutes")::float8 AS "minutes"
-    FROM "EnterpriseSustainabilityReading"
-    WHERE "orgId" = $1
+  let loadWhere = `"orgId" = $1
       AND "recordedAt" >= ($2::timestamptz AT TIME ZONE 'UTC') AND "recordedAt" < ($3::timestamptz AT TIME ZONE 'UTC')
-      AND "facilityEnergyKwh" IS NOT NULL AND "assetId" IS NULL`;
-  if (propertyId) { loadSqlParams.push(propertyId); loadSql += ` AND "propertyId" = $4`; }
-  loadSql += ` GROUP BY 1, 2 ORDER BY 1, 2`;
+      AND "facilityEnergyKwh" IS NOT NULL AND ("meterId" IS NOT NULL OR "assetId" IS NULL)`;
+  if (propertyId) { loadSqlParams.push(propertyId); loadWhere += ` AND "propertyId" = $4`; }
+  const loadSql = `SELECT "propertyId", "meterId", to_char("recordedAt", 'YYYY-MM') AS "month",
+      SUM("facilityEnergyKwh")::float8 AS "kwh", SUM("intervalMinutes")::float8 AS "minutes", COUNT(*)::int AS "count"
+    FROM (
+      SELECT DISTINCT ON ("propertyId", COALESCE("meterId", ''), "recordedAt")
+        "propertyId", "meterId", "recordedAt", "facilityEnergyKwh", "intervalMinutes"
+      FROM "EnterpriseSustainabilityReading"
+      WHERE ${loadWhere}
+      ORDER BY "propertyId", COALESCE("meterId", ''), "recordedAt", "updatedAt" DESC, "id" DESC
+    ) d
+    GROUP BY 1, 2, 3 ORDER BY 1, 3, 2`;
 
   const water = buildDailyAggregateSql({ orgId, from: range.from, to: range.to, propertyId });
 
-  const [properties, contracts, assets, steps, milestones, costs, dailyRows, loadRows, gridByProperty] = await Promise.all([
+  const [properties, contracts, assets, steps, milestones, costs, dailyRows, loadRows, gridByProperty, meters] = await Promise.all([
     prisma.enterpriseProperty.findMany({
       where: { orgId, ...(propertyId && { id: propertyId }) },
       select: { id: true, name: true, type: true, requiredReserveMarginPct: true, gridWaterIntensityGalPerMwh: true, gridWaterIntensitySource: true },
@@ -85,6 +96,7 @@ export async function GET(request) {
     prisma.$queryRawUnsafe(water.sql, ...water.params),
     prisma.$queryRawUnsafe(loadSql, ...loadSqlParams),
     prisma.enterpriseSustainabilityReading.groupBy({ by: ["propertyId"], where: readingRange, _sum: { gridEnergyKwh: true } }),
+    prisma.enterpriseMeter.findMany({ where: { orgId, ...byProperty } }),
   ]);
 
   const deliveries = contracts.length
@@ -109,18 +121,24 @@ export async function GET(request) {
     let rampTo = new Date(Math.max(range.to.getTime(), last.getTime() + 31 * DAY_MS));
     const maxTo = new Date(rampFrom); maxTo.setUTCMonth(maxTo.getUTCMonth() + MAX_RAMP_MONTHS);
     if (rampTo > maxTo) rampTo = maxTo;
-    const monthly = loadRows.filter((r) => r.propertyId === p.id).map((r) => ({ month: r.month, kwh: Number(r.kwh), minutes: Number(r.minutes) }));
+    const siteMeters = meters.filter((m) => m.propertyId === p.id);
+    const meterMonths = loadRows.filter((r) => r.propertyId === p.id)
+      .map((r) => ({ month: r.month, meterId: r.meterId ?? null, kwh: Number(r.kwh), minutes: Number(r.minutes), count: Number(r.count) }));
+    const monthly = Object.entries(siteMonthlyLoad(siteMeters, meterMonths)).map(([month, v]) => ({ month, ...v }));
     return {
       property: p,
       hasPlan: siteSteps.length > 0,
       reserve: reserveMargin({ property: p, contracts: siteContracts, assets: siteAssets, steps: siteSteps }),
       ramp: siteSteps.length || monthly.length ? rampComparison(siteSteps, monthly, { from: rampFrom, to: rampTo }) : [],
       steps: siteSteps,
+      meters: siteMeters,
+      unassignedReadingsIgnored: monthly.reduce((s, m) => s + (m.unassignedIgnored || 0), 0),
     };
   });
 
   // ── Water ──
-  const { metrics } = metricsFromDailySqlRows(dailyRows);
+  const propertyLabels = Object.fromEntries(properties.map((p) => [p.id, p.name]));
+  const { metrics, siteWaterClaims } = metricsFromDailySqlRows(dailyRows, { propertyLabels });
   const gridKwhByProperty = Object.fromEntries(gridByProperty.map((g) => [g.propertyId, g._sum.gridEnergyKwh]));
   const upstream = upstreamWater({ contracts, performance, properties, gridKwhByProperty });
   const direct = metrics.totals.waterConsumedGallons;
@@ -128,6 +146,25 @@ export async function GET(request) {
   return ok({
     yourRole: ctx.role,
     period: { from: iso(range.from), to: iso(range.to), propertyId },
+    // Provenance for every derived figure in this response.
+    calculation: {
+      calculatedAt: new Date().toISOString(),
+      formulaVersions: {
+        water: WATER_FORMULA_VERSION,
+        load: LOAD_FORMULA_VERSION,
+        reserveMargin: "reserve-margin-v1",
+        delivery: "delivery-vs-contract-v1",
+        resourceMix: "resource-mix-v1",
+        upstreamWater: "upstream-water-v1",
+        costAllocation: "cost-allocation-v1",
+        milestones: "milestones-v1",
+      },
+      inputs: {
+        contracts: contracts.length, deliveries: deliveries.length, assets: assets.length, meters: meters.length,
+        rampSteps: steps.length, milestones: milestones.length, costItems: costs.length,
+        readingDays: dailyRows.length,
+      },
+    },
     supply: { mix, delivery: performance, contractCount: contracts.length },
     sites,
     regulatory: milestoneSummary(milestones),
@@ -135,6 +172,9 @@ export async function GET(request) {
     water: {
       direct: {
         withdrawnGallons: metrics.totals.waterWithdrawnGallons,
+        reclaimedImportedGallons: metrics.totals.waterReclaimedImportedGallons,
+        storageChangeGallons: metrics.totals.waterStorageChangeGallons,
+        nonPotableSharePct: metrics.efficiency.nonPotableSharePct,
         consumedGallons: direct,
         dischargedGallons: metrics.totals.waterDischargedGallons,
         recycledGallons: metrics.totals.waterRecycledGallons,
@@ -142,7 +182,9 @@ export async function GET(request) {
         wueLitersPerItKwh: metrics.efficiency.wueLitersPerItKwh,
         recycledWaterSharePct: metrics.efficiency.recycledWaterSharePct,
       },
-      claim: metrics.waterClaim,
+      claim: metrics.waterClaim, // least-trusted across sites
+      evidenceStatus: metrics.waterEvidenceStatus, // WUE / recycled share / water saved inherit this
+      siteClaims: siteWaterClaims,
       upstream,
       // Total footprint only when both halves are known.
       totalConsumptiveGallons: direct !== null && upstream.upstreamGallons !== null ? Math.round((direct + upstream.upstreamGallons) * 100) / 100 : null,
