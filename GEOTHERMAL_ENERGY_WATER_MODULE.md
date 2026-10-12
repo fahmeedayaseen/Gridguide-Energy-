@@ -15,12 +15,36 @@ This release adds an enterprise module for tracking geothermal generation, data-
 
 ## API routes
 
-- `GET /api/enterprise/geothermal/dashboard`
-- `GET|POST /api/enterprise/geothermal/assets`
-- `GET|POST /api/enterprise/geothermal/ppas`
-- `GET|POST /api/enterprise/geothermal/readings`
+| Route | Methods | Who |
+|---|---|---|
+| `/api/enterprise/geothermal/dashboard?days=` or `?from=&to=` (+ `&propertyId=`) | GET | Viewer+ |
+| `/api/enterprise/geothermal/properties` | GET | Viewer+ or API key |
+| `/api/enterprise/geothermal/assets` | GET · POST | GET: Viewer+ or API key · POST: Manager+ |
+| `/api/enterprise/geothermal/assets/:id` | PATCH · DELETE | Manager+ |
+| `/api/enterprise/geothermal/ppas` | GET · POST | Viewer+ · Manager+ |
+| `/api/enterprise/geothermal/ppas/:id` | PATCH · DELETE | Manager+ |
+| `/api/enterprise/geothermal/readings` | GET · POST | GET: Viewer+ or API key · POST: Manager+ or API key |
+| `/api/enterprise/geothermal/readings/:id` | PATCH · DELETE | Manager+ |
 
-POST requests require an enterprise Manager or Admin role. The readings endpoint accepts either one reading or a `readings` array of up to 500 records, allowing meter, DCIM, BMS, or utility integrations to ingest data.
+- **Readings POST** accepts one reading or `{ "readings": [...] }` (max 500). Validation is per row; errors name the failing row numbers.
+- **Readings GET** supports `propertyId`, `assetId`, `source`, `from`, `to`, `limit` (≤ 500) and cursor paging (`nextCursor`).
+- **Upserts:** a reading with an `externalId` is upserted on (org, source, externalId), so a retried or corrected meter value updates the stored reading instead of duplicating it. Integrations should always send one.
+- **Deleting an asset** that has readings or PPAs is refused (409); set its status to `RETIRED` instead.
+- Every create, edit and delete is audit-logged.
+
+### Integrations (API keys)
+
+Meters, BMS and DCIM systems authenticate with an Enterprise API key (created by an Admin under **API Keys**; requires the org's API access to be enabled):
+
+```
+Authorization: Bearer gg_live_...      (or  X-API-Key: gg_live_...)
+```
+
+Keys can only read properties/assets/readings and add readings — `middleware.js` rejects a key on any other route, and keys never act with Admin/Owner rights. Readings sent with a key default to `source: "API"`. Limit: 120 requests per minute per key.
+
+### CSV import
+
+**Import & API → Import Readings from CSV** in the portal. Columns: `propertyId` or `property` (name), optional `assetId` or `asset` (name), `recordedAt`, `intervalMinutes`, any of the measurement fields, optional `externalId`. Blank cells mean "not measured". Rows are checked in the browser first (problems listed by line number), then uploaded in batches of 500. Each row gets a stable `externalId` derived from property, asset and time, so re-importing a corrected file updates rather than duplicates.
 
 ## Deployment
 
@@ -30,7 +54,7 @@ POST requests require an enterprise Manager or Admin role. The readings endpoint
 4. Apply migrations with `npx prisma migrate deploy`.
 5. Build with `npm run build` and deploy through the normal GridGuide release process.
 
-The migration is `prisma/migrations/20260924_enterprise_geothermal_energy_water/migration.sql`.
+Migrations: the module's tables are in the `0_init` baseline; `prisma/migrations/20261011_geothermal_complete/migration.sql` makes measurements nullable, adds `updatedAt` to readings and indexes API-key hashes.
 
 ## Metric definitions
 
@@ -49,7 +73,20 @@ The migration is `prisma/migrations/20260924_enterprise_geothermal_energy_water/
 
 Ratios are returned as unknown when their denominator is absent or zero. This avoids presenting missing operational data as a measured zero. The dashboard shows an unknown Recycled Water Share as "No data".
 
+### Missing is not zero
+
+Every measurement on a reading is optional and stored as `NULL` when not reported. A total is "No data" when no reading in the period reported it, and each ratio only uses readings that reported **both** of its inputs — a reading with facility energy but no IT energy doesn't distort PUE. The dashboard aggregates in Postgres (one row per UTC day) rather than loading every reading. Readings saved before 2026-10-11 stored blank form fields as `0`; those can't be distinguished automatically and can be corrected in the Readings tab.
+
 ## Change log
+
+**2026-10-11: Module completion**
+- Edit and delete for assets, PPAs and readings (API + UI); asset delete blocked while readings/PPAs reference it.
+- Enterprise API-key authentication for integrations on the readings, assets and properties routes.
+- CSV import with in-browser validation, batching and re-import without duplicates.
+- Nullable measurements: blank is "No data", never 0; ratios use paired readings only.
+- Dashboard: property filter, custom date range, aggregation in Postgres.
+- Readings list with filters and paging; upsert by externalId; per-row validation errors.
+- Asset form gains status, thermal capacity and commercial-operation date; PPA form gains utility, status, escalation, approval, dates and notes.
 
 **2026-10-07: Recycled Water Share**
 - Kept the formula recycled ÷ (withdrawn + recycled) × 100 and renamed the metric "Recycled Water Share (%)". API field renamed from `efficiency.waterReusePct` to `efficiency.recycledWaterSharePct` (no other code read the old field).

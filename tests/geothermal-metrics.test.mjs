@@ -52,3 +52,65 @@ test("estimates a priced PPA and leaves confidential pricing unknown", () => {
   assert.equal(priced.estimatedContractValue, 12614400);
   assert.equal(estimatePpaValue({ contractedMw: 10, pricePerMwh: null, termYears: 20 }), null);
 });
+
+// ── Missing is not zero (Oct 2026) ────────────────────────────────────────────
+import {
+  aggregateReadings, mergeAggregates, metricsFromAggregate, metricsFromDailySqlRows,
+  buildDailyAggregateSql, MEASUREMENT_FIELDS, measurement,
+} from "../lib/geothermal-metrics.mjs";
+
+test("totals are null for measurements nobody reported", () => {
+  const result = calculateEnergyWaterMetrics([{ facilityEnergyKwh: 100, itEnergyKwh: 80 }]);
+  assert.equal(result.totals.facilityEnergyKwh, 100);
+  assert.equal(result.totals.waterConsumedGallons, null);
+  assert.equal(result.totals.waterSavedGallons, null);
+  assert.equal(result.reportedCounts.waterConsumedGallons, 0);
+});
+
+test("ratios only use readings that reported both inputs", () => {
+  // Reading 2 has facility energy but no IT energy — it must not inflate PUE.
+  const result = calculateEnergyWaterMetrics([
+    { facilityEnergyKwh: 120, itEnergyKwh: 100 },
+    { facilityEnergyKwh: 500 },
+  ]);
+  assert.equal(result.efficiency.pue, 1.2);
+  assert.equal(result.totals.facilityEnergyKwh, 620);
+});
+
+test("an explicit zero is a real measurement, null/blank is not", () => {
+  assert.equal(measurement(0), 0);
+  assert.equal(measurement(""), null);
+  assert.equal(measurement(null), null);
+  assert.equal(measurement(undefined), null);
+  assert.equal(measurement("abc"), null);
+  const result = calculateEnergyWaterMetrics([{ waterConsumedGallons: 0 }]);
+  assert.equal(result.totals.waterConsumedGallons, 0);
+});
+
+test("merged daily aggregates equal one aggregate over all readings", () => {
+  const a = [{ facilityEnergyKwh: 10, itEnergyKwh: 8, waterRecycledGallons: 5, waterWithdrawnGallons: 15 }];
+  const b = [{ facilityEnergyKwh: 30, itEnergyKwh: 20 }, { waterConsumedGallons: 7 }];
+  const merged = metricsFromAggregate(mergeAggregates([aggregateReadings(a), aggregateReadings(b)]));
+  assert.deepEqual(merged, calculateEnergyWaterMetrics([...a, ...b]));
+});
+
+test("SQL row shape converts to the same metrics as the JS path", () => {
+  const readings = [{ facilityEnergyKwh: 120, itEnergyKwh: 100, waterWithdrawnGallons: 100, waterRecycledGallons: 50 }];
+  const agg = aggregateReadings(readings);
+  const row = { day: "2026-10-01", n: agg.readingCount };
+  for (const f of MEASUREMENT_FIELDS) { row[`s_${f}`] = agg.sums[f]; row[`c_${f}`] = agg.counts[f]; }
+  for (const [p, v] of Object.entries(agg.pairs)) { row[`pa_${p}`] = v.a; row[`pb_${p}`] = v.b; row[`pn_${p}`] = v.n; }
+  const { metrics, trend } = metricsFromDailySqlRows([row]);
+  assert.deepEqual(metrics, calculateEnergyWaterMetrics(readings));
+  assert.equal(trend[0].date, "2026-10-01");
+});
+
+test("aggregate SQL binds every value as a parameter", () => {
+  const { sql, params } = buildDailyAggregateSql({
+    orgId: "org'; DROP TABLE x;--", from: new Date("2026-01-01"), to: new Date("2026-02-01"), propertyId: "p1",
+  });
+  assert.ok(!sql.includes("DROP TABLE"));
+  assert.equal(params.length, 4);
+  assert.match(sql, /\$4/);
+  assert.equal(params[1], "2026-01-01T00:00:00.000Z");
+});

@@ -2717,20 +2717,22 @@ model EnterpriseSustainabilityReading {
   assetId                      String?
   recordedAt                   DateTime
   intervalMinutes              Int      @default(60)
-  facilityEnergyKwh            Float    @default(0)
-  itEnergyKwh                  Float    @default(0)
-  geothermalDeliveredKwh       Float    @default(0)
-  gridEnergyKwh                Float    @default(0)
-  coolingEnergyKwh             Float    @default(0)
-  waterWithdrawnGallons        Float    @default(0)
-  waterConsumedGallons         Float    @default(0)
-  baselineWaterConsumedGallons Float    @default(0)
-  waterRecycledGallons         Float    @default(0)
-  carbonAvoidedKg              Float    @default(0)
+  facilityEnergyKwh            Float?
+  itEnergyKwh                  Float?
+  geothermalDeliveredKwh       Float?
+  gridEnergyKwh                Float?
+  coolingEnergyKwh             Float?
+  waterWithdrawnGallons        Float?
+  waterConsumedGallons         Float?
+  baselineWaterConsumedGallons Float?
+  waterRecycledGallons         Float?
+  carbonAvoidedKg              Float?
+  // Measurements are nullable: null = not reported (shown as "No data"), never zero.
   source                       String   @default("MANUAL") // MANUAL | CSV | API | METER | DCIM | BMS
   externalId                   String?
   metadata                     Json?
   createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @default(now()) @updatedAt
 
   org      EnterpriseOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   property EnterpriseProperty     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -2902,6 +2904,7 @@ model EnterpriseApiKey {
   org EnterpriseOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([keyHash])
 }
 
 model EnterpriseAuditLog {

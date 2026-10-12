@@ -20899,114 +20899,432 @@ function EntCarbon() {
   );
 }
 
-function EntGeothermal() {
+// ── Enterprise · Energy & Water (geothermal) ────────────────────────────────
+// Missing measurements are shown as "No data", never as zero (see
+// lib/geothermal-metrics.mjs). Blank form fields are sent as blank and stored
+// as null by the API.
+const GEO_MEASUREMENTS=[
+  ["facilityEnergyKwh","Facility energy","kWh","Facility kWh"],
+  ["itEnergyKwh","IT equipment energy","kWh","IT equipment kWh"],
+  ["geothermalDeliveredKwh","Geothermal delivered","kWh","Geothermal kWh"],
+  ["gridEnergyKwh","Grid energy","kWh","Grid kWh"],
+  ["coolingEnergyKwh","Cooling energy","kWh","Cooling kWh"],
+  ["waterWithdrawnGallons","New water withdrawn","gal","New water withdrawn gal (excl. recycled)"],
+  ["waterConsumedGallons","Water consumed","gal","Water consumed gal"],
+  ["baselineWaterConsumedGallons","Baseline water consumed","gal","Baseline water consumed gal"],
+  ["waterRecycledGallons","Water recycled","gal","Water recycled gal"],
+  ["carbonAvoidedKg","CO₂ avoided","kg","CO₂ avoided kg"],
+];
+const GEO_FIELD_KEYS=GEO_MEASUREMENTS.map(m=>m[0]);
+const GEO_ASSET_TYPES=["GEOTHERMAL_GENERATION","GROUND_SOURCE_HEAT_PUMP","THERMAL_STORAGE","BATTERY","UPS","CHILLER","GRID_CONNECTION","SOLAR"];
+const GEO_ASSET_STATUSES=["PLANNED","CONSTRUCTION","ACTIVE","INACTIVE","RETIRED"];
+const GEO_COOLING=["AIR","WATER","HYBRID","CLOSED_LOOP","GROUND_SOURCE","OTHER"];
+const GEO_WATER=["NONE","CLOSED_LOOP","RECLAIMED","MUNICIPAL","GROUNDWATER","SURFACE","OTHER"];
+const GEO_PPA_STATUSES=["PROPOSED","PENDING_APPROVAL","ACTIVE","EXPIRED","TERMINATED"];
+const GEO_APPROVALS=["NOT_REQUIRED","PENDING","APPROVED","REJECTED"];
+const GEO_CSV_BATCH=500;
+const geoLabel=s=>String(s||"").replaceAll("_"," ").toLowerCase().replace(/^\w/,c=>c.toUpperCase());
+const geoPad=n=>String(n).padStart(2,"0");
+const geoToLocalInput=iso=>{if(!iso)return"";const d=new Date(iso);return `${d.getFullYear()}-${geoPad(d.getMonth()+1)}-${geoPad(d.getDate())}T${geoPad(d.getHours())}:${geoPad(d.getMinutes())}`;};
+const geoToDateInput=iso=>iso?new Date(iso).toISOString().slice(0,10):"";
+const geoDateToIso=v=>v?`${v}T00:00:00.000Z`:"";
+const geoBlankAsset={propertyId:"",name:"",type:"GEOTHERMAL_GENERATION",status:"PLANNED",provider:"",ratedCapacityKw:"",thermalCapacityKwh:"",coolingType:"CLOSED_LOOP",waterSource:"NONE",commercialOperationAt:""};
+const geoBlankPpa={propertyId:"",assetId:"",name:"",seller:"",utility:"",status:"PROPOSED",contractedMw:"",termYears:"15",capacityFactorPct:"90",pricePerMwh:"",annualEscalationPct:"",regulatoryApproval:"PENDING",signedAt:"",deliveryStartAt:"",deliveryEndAt:"",notes:""};
+const geoBlankReading=()=>({propertyId:"",assetId:"",recordedAt:geoToLocalInput(new Date().toISOString()),intervalMinutes:"60",...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,""]))});
+
+const GEO_FIELD_STYLE={width:"100%",padding:"9px 10px",background:T_E.surf,border:`1px solid ${T_E.bord}`,borderRadius:8,color:T_E.text,fontSize:11,boxSizing:"border-box"};
+const GEO_LABEL_STYLE={display:"block",fontSize:10,color:T_E.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".04em"};
+function GeoField({label,children,span}){return <label style={span?{gridColumn:"1 / -1"}:undefined}><span style={GEO_LABEL_STYLE}>{label}</span>{children}</label>;}
+function GeoRow({k,v}){return <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:`1px solid ${T_E.bord}44`,fontSize:12}}><span style={{color:T_E.muted}}>{k}</span><strong style={{color:T_E.text,textAlign:"right"}}>{v}</strong></div>;}
+function GeoEmpty({children}){return <div style={{textAlign:"center",padding:25,color:T_E.dim,fontSize:12}}>{children}</div>;}
+
+function geoErrorText(d,fallback){
+  if(!d) return fallback;
+  if(Array.isArray(d.details)&&d.details.length){
+    const lines=d.details.slice(0,5).map(x=>x.row?`Row ${x.row}: ${(x.issues||[]).join("; ")}`:(x.issues||[x.message||""]).join("; "));
+    return `${d.error||fallback} — ${lines.join(" · ")}${d.details.length>5?` (+${d.details.length-5} more)`:""}`;
+  }
+  return d.error||fallback;
+}
+
+function EntGeothermal({setTab}) {
   const {isMobile,isTablet}=usePBP();
   const [data,setData]=React.useState(null);
   const [loading,setLoading]=React.useState(true);
-  const [days,setDays]=React.useState("30");
+  const [range,setRange]=React.useState("30");
+  const [customFrom,setCustomFrom]=React.useState("");
+  const [customTo,setCustomTo]=React.useState("");
+  const [propertyFilter,setPropertyFilter]=React.useState("");
   const [panel,setPanel]=React.useState("overview");
   const [notice,setNotice]=React.useState(null);
   const [saving,setSaving]=React.useState(false);
-  const [assetForm,setAssetForm]=React.useState({propertyId:"",name:"",type:"GEOTHERMAL_GENERATION",status:"PLANNED",provider:"",ratedCapacityKw:"",coolingType:"CLOSED_LOOP",waterSource:"NONE"});
-  const [ppaForm,setPpaForm]=React.useState({propertyId:"",assetId:"",name:"",seller:"",utility:"",status:"PROPOSED",contractedMw:"",termYears:"15",capacityFactorPct:"90",pricePerMwh:"",annualEscalationPct:"",regulatoryApproval:"PENDING"});
-  const [readingForm,setReadingForm]=React.useState({propertyId:"",assetId:"",recordedAt:new Date().toISOString().slice(0,16),intervalMinutes:"60",facilityEnergyKwh:"",itEnergyKwh:"",geothermalDeliveredKwh:"",gridEnergyKwh:"",coolingEnergyKwh:"",waterWithdrawnGallons:"",waterConsumedGallons:"",baselineWaterConsumedGallons:"",waterRecycledGallons:"",carbonAvoidedKg:""});
+  const [assetForm,setAssetForm]=React.useState(geoBlankAsset);
+  const [editingAssetId,setEditingAssetId]=React.useState(null);
+  const [ppaForm,setPpaForm]=React.useState(geoBlankPpa);
+  const [editingPpaId,setEditingPpaId]=React.useState(null);
+  const [readingForm,setReadingForm]=React.useState(geoBlankReading);
+  const [editingReadingId,setEditingReadingId]=React.useState(null);
+  const [readings,setReadings]=React.useState([]);
+  const [readingsCursor,setReadingsCursor]=React.useState(null);
+  const [readingsLoading,setReadingsLoading]=React.useState(false);
+  const [csv,setCsv]=React.useState(null); // {fileName, rows, errors, uploading, done, failed, result}
+
+  // ── Query ranges ───────────────────────────────────────────────────────────
+  const customValid=range!=="custom"||(customFrom&&customTo&&customFrom<=customTo);
+  const dashQuery=React.useMemo(()=>{
+    const q=new URLSearchParams();
+    if(range==="custom"){q.set("from",customFrom);q.set("to",customTo);}else q.set("days",range);
+    if(propertyFilter)q.set("propertyId",propertyFilter);
+    return q.toString();
+  },[range,customFrom,customTo,propertyFilter]);
+  const readingsQuery=React.useMemo(()=>{
+    const q=new URLSearchParams({limit:"50"});
+    if(range==="custom"){q.set("from",customFrom);q.set("to",customTo);}
+    else q.set("from",new Date(Date.now()-Number(range)*864e5).toISOString());
+    if(propertyFilter)q.set("propertyId",propertyFilter);
+    return q.toString();
+  },[range,customFrom,customTo,propertyFilter]);
 
   const load=React.useCallback(()=>{
+    if(!customValid) return;
     setLoading(true);
-    fetch(`/api/enterprise/geothermal/dashboard?days=${days}`,{credentials:"include"})
-      .then(r=>r.json()).then(d=>{if(!d.error)setData(d);else setNotice({type:"error",text:d.error});setLoading(false);})
+    fetch(`/api/enterprise/geothermal/dashboard?${dashQuery}`,{credentials:"include"})
+      .then(r=>r.json()).then(d=>{if(d.ok!==false&&!d.error)setData(d);else setNotice({type:"error",text:geoErrorText(d,"Could not load energy and water data.")});setLoading(false);})
       .catch(()=>{setNotice({type:"error",text:"Could not load energy and water data."});setLoading(false);});
-  },[days]);
+  },[dashQuery,customValid]);
   React.useEffect(()=>{load();},[load]);
 
-  const submit=async(url,body,success)=>{
+  const loadReadings=React.useCallback((cursor=null)=>{
+    if(!customValid) return;
+    setReadingsLoading(true);
+    fetch(`/api/enterprise/geothermal/readings?${readingsQuery}${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`,{credentials:"include"})
+      .then(r=>r.json()).then(d=>{
+        if(d.error){setNotice({type:"error",text:geoErrorText(d,"Could not load readings.")});}
+        else{setReadings(prev=>cursor?[...prev,...(d.readings||[])]:(d.readings||[]));setReadingsCursor(d.nextCursor||null);}
+        setReadingsLoading(false);
+      }).catch(()=>{setNotice({type:"error",text:"Could not load readings."});setReadingsLoading(false);});
+  },[readingsQuery,customValid]);
+  React.useEffect(()=>{if(panel==="readings")loadReadings();},[panel,loadReadings]);
+
+  const refresh=()=>{load();if(panel==="readings")loadReadings();};
+
+  const send=async(method,url,body,success)=>{
     setSaving(true);setNotice(null);
     try{
-      const r=await fetch(url,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.error||"Could not save");
-      setNotice({type:"success",text:success});load();return true;
-    }catch(e){setNotice({type:"error",text:e.message});return false;}
+      const r=await fetch(url,{method,credentials:"include",headers:body?{"Content-Type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(geoErrorText(d,"Could not save"));
+      setNotice({type:"success",text:d.message||success});refresh();return d;
+    }catch(e){setNotice({type:"error",text:e.message});return null;}
     finally{setSaving(false);}
   };
 
-  const fieldStyle={width:"100%",padding:"9px 10px",background:T_E.surf,border:`1px solid ${T_E.bord}`,borderRadius:8,color:T_E.text,fontSize:11,boxSizing:"border-box"};
-  const labelStyle={display:"block",fontSize:10,color:T_E.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".04em"};
+  // ── Formatting ─────────────────────────────────────────────────────────────
+  const fieldStyle=GEO_FIELD_STYLE;
   const money=v=>v==null?"Pricing confidential":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(v);
-  const number=v=>Number(v||0).toLocaleString(undefined,{maximumFractionDigits:2});
+  const number=v=>v==null?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:2});
+  const qty=(v,unit)=>v==null?"No data":`${number(v)} ${unit}`;
   const role=data?.yourRole||"Viewer";
   const canManage=ENT_ROLE_RANK[role]>=ENT_ROLE_RANK.Manager;
+  const canManageKeys=ENT_ROLE_RANK[role]>=ENT_ROLE_RANK.Admin;
+  const properties=data?.properties||[];
+  const assets=data?.assets||[];
+  const propertyName=id=>properties.find(p=>p.id===id)?.name||"Unknown property";
+  const select=(value,onChange,options,{blank,labelFn=geoLabel}={})=><select style={fieldStyle} value={value} onChange={e=>onChange(e.target.value)}>{blank!==undefined&&<option value="">{blank}</option>}{options.map(o=>typeof o==="string"?<option key={o} value={o}>{labelFn(o)}</option>:<option key={o.id} value={o.id}>{o.name}</option>)}</select>;
+  const confirmDelete=what=>typeof window==="undefined"||window.confirm(`Delete ${what}? This can't be undone.`);
 
+  // ── Asset actions ──────────────────────────────────────────────────────────
+  const assetBody=()=>({...assetForm,commercialOperationAt:geoDateToIso(assetForm.commercialOperationAt)});
+  const editAsset=a=>{setEditingAssetId(a.id);setAssetForm({propertyId:a.propertyId||"",name:a.name||"",type:a.type,status:a.status,provider:a.provider||"",ratedCapacityKw:a.ratedCapacityKw??"",thermalCapacityKwh:a.thermalCapacityKwh??"",coolingType:a.coolingType||"",waterSource:a.waterSource||"",commercialOperationAt:geoToDateInput(a.commercialOperationAt)});};
+  const resetAsset=()=>{setEditingAssetId(null);setAssetForm(geoBlankAsset);};
+  const saveAsset=async()=>{
+    const ok=editingAssetId
+      ?await send("PATCH",`/api/enterprise/geothermal/assets/${editingAssetId}`,assetBody(),"Energy asset updated.")
+      :await send("POST","/api/enterprise/geothermal/assets",assetBody(),"Energy asset added.");
+    if(ok)resetAsset();
+  };
+  const deleteAsset=async a=>{if(confirmDelete(`"${a.name}"`)){const ok=await send("DELETE",`/api/enterprise/geothermal/assets/${a.id}`,null,"Energy asset deleted.");if(ok&&editingAssetId===a.id)resetAsset();}};
+
+  // ── PPA actions ────────────────────────────────────────────────────────────
+  const ppaBody=()=>({...ppaForm,signedAt:geoDateToIso(ppaForm.signedAt),deliveryStartAt:geoDateToIso(ppaForm.deliveryStartAt),deliveryEndAt:geoDateToIso(ppaForm.deliveryEndAt)});
+  const editPpa=p=>{setEditingPpaId(p.id);setPpaForm({propertyId:p.propertyId||"",assetId:p.assetId||"",name:p.name||"",seller:p.seller||"",utility:p.utility||"",status:p.status,contractedMw:p.contractedMw??"",termYears:p.termYears??"",capacityFactorPct:p.capacityFactorPct??"90",pricePerMwh:p.pricePerMwh??"",annualEscalationPct:p.annualEscalationPct??"",regulatoryApproval:p.regulatoryApproval||"",signedAt:geoToDateInput(p.signedAt),deliveryStartAt:geoToDateInput(p.deliveryStartAt),deliveryEndAt:geoToDateInput(p.deliveryEndAt),notes:p.notes||""});};
+  const resetPpa=()=>{setEditingPpaId(null);setPpaForm(geoBlankPpa);};
+  const savePpa=async()=>{
+    const ok=editingPpaId
+      ?await send("PATCH",`/api/enterprise/geothermal/ppas/${editingPpaId}`,ppaBody(),"PPA updated.")
+      :await send("POST","/api/enterprise/geothermal/ppas",ppaBody(),"Geothermal PPA added.");
+    if(ok)resetPpa();
+  };
+  const deletePpa=async p=>{if(confirmDelete(`the PPA "${p.name}"`)){const ok=await send("DELETE",`/api/enterprise/geothermal/ppas/${p.id}`,null,"PPA deleted.");if(ok&&editingPpaId===p.id)resetPpa();}};
+
+  // ── Reading actions ────────────────────────────────────────────────────────
+  const readingHasValue=GEO_FIELD_KEYS.some(k=>String(readingForm[k]??"").trim()!=="");
+  const editReading=r=>{setEditingReadingId(r.id);setReadingForm({propertyId:r.propertyId,assetId:r.assetId||"",recordedAt:geoToLocalInput(r.recordedAt),intervalMinutes:String(r.intervalMinutes??60),...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,r[k]??""]))});if(typeof window!=="undefined")window.scrollTo?.({top:0,behavior:"smooth"});};
+  const resetReading=()=>{setEditingReadingId(null);setReadingForm(geoBlankReading());};
+  const saveReading=async()=>{
+    // Blank stays blank: the API stores it as "not measured", never zero.
+    const body={...readingForm,recordedAt:new Date(readingForm.recordedAt).toISOString(),assetId:readingForm.assetId||null};
+    for(const k of GEO_FIELD_KEYS){const v=String(body[k]??"").trim();body[k]=v===""?null:v;}
+    const ok=editingReadingId
+      ?await send("PATCH",`/api/enterprise/geothermal/readings/${editingReadingId}`,body,"Reading updated.")
+      :await send("POST","/api/enterprise/geothermal/readings",body,"Verified reading saved.");
+    if(ok){if(editingReadingId)resetReading();else setReadingForm(f=>({...f,...Object.fromEntries(GEO_FIELD_KEYS.map(k=>[k,""]))}));}
+  };
+  const deleteReading=async r=>{if(confirmDelete(`the reading from ${new Date(r.recordedAt).toLocaleString()}`)){const ok=await send("DELETE",`/api/enterprise/geothermal/readings/${r.id}`,null,"Reading deleted.");if(ok&&editingReadingId===r.id)resetReading();}};
+
+  // ── CSV import ─────────────────────────────────────────────────────────────
+  const csvHeaders=["propertyId","property","assetId","asset","recordedAt","intervalMinutes",...GEO_FIELD_KEYS,"externalId"];
+  const downloadTemplate=()=>{
+    const p=properties[0];
+    const example={propertyId:p?.id||"",property:p?"":"Your property name",recordedAt:new Date().toISOString().slice(0,13)+":00:00Z",intervalMinutes:"60"};
+    const row=csvHeaders.map(h=>example[h]??"");
+    const csvText=`${csvHeaders.join(",")}\n${row.map(v=>/[",\n]/.test(v)?`"${v.replaceAll('"','""')}"`:v).join(",")}\n`;
+    const url=URL.createObjectURL(new Blob([csvText],{type:"text/csv"}));
+    const a=document.createElement("a");a.href=url;a.download="gridguide-energy-water-readings.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  const parseCsvFile=async file=>{
+    setCsv({fileName:file.name,parsing:true,rows:[],errors:[]});
+    try{
+      const Papa=(await import("papaparse")).default;
+      const text=await file.text();
+      const parsed=Papa.parse(text.replace(/^﻿/,""),{header:true,skipEmptyLines:"greedy",transformHeader:h=>h.trim()});
+      const byName=new Map(properties.map(p=>[p.name.trim().toLowerCase(),p.id]));
+      const propIds=new Set(properties.map(p=>p.id));
+      const assetByName=new Map(assets.map(a=>[a.name.trim().toLowerCase(),a.id]));
+      const assetIds=new Set(assets.map(a=>a.id));
+      const rows=[],errors=[];
+      parsed.errors.slice(0,20).forEach(e=>errors.push({line:(e.row??0)+2,issues:[e.message]}));
+      parsed.data.forEach((raw,i)=>{
+        const line=i+2,issues=[];
+        const get=k=>String(raw[k]??"").trim();
+        let propertyId=get("propertyId");
+        if(!propertyId&&get("property"))propertyId=byName.get(get("property").toLowerCase())||"";
+        if(!propertyId)issues.push(get("property")?`unknown property "${get("property")}"`:"propertyId or property is required");
+        else if(!propIds.has(propertyId))issues.push(`unknown propertyId "${propertyId}"`);
+        let assetId=get("assetId");
+        if(!assetId&&get("asset")){assetId=assetByName.get(get("asset").toLowerCase())||"";if(!assetId)issues.push(`unknown asset "${get("asset")}"`);}
+        else if(assetId&&!assetIds.has(assetId))issues.push(`unknown assetId "${assetId}"`);
+        const rawTime=get("recordedAt");
+        const when=new Date(rawTime.includes("T")||!rawTime?rawTime:rawTime.replace(" ","T"));
+        if(!rawTime||Number.isNaN(when.getTime()))issues.push("recordedAt must be a date/time, e.g. 2026-10-01T14:00:00Z");
+        const interval=get("intervalMinutes")===""?60:Number(get("intervalMinutes"));
+        if(!Number.isInteger(interval)||interval<1||interval>44640)issues.push("intervalMinutes must be a whole number 1–44640");
+        const reading={propertyId,assetId:assetId||null,intervalMinutes:interval,source:"CSV"};
+        let measured=0;
+        for(const k of GEO_FIELD_KEYS){
+          const v=get(k).replaceAll(",","");
+          if(v===""){reading[k]=null;continue;}
+          const num=Number(v);
+          if(!Number.isFinite(num)||num<0)issues.push(`${k} must be a number ≥ 0`);else{reading[k]=num;measured++;}
+        }
+        if(!measured)issues.push("at least one measurement is required");
+        if(issues.length){errors.push({line,issues});return;}
+        reading.recordedAt=when.toISOString();
+        // A stable key per row: re-importing a corrected file updates these
+        // readings instead of duplicating them.
+        reading.externalId=get("externalId")||`csv:${propertyId}:${assetId||"-"}:${reading.recordedAt}`;
+        rows.push(reading);
+      });
+      setCsv({fileName:file.name,rows,errors,totalLines:parsed.data.length});
+    }catch(e){setCsv({fileName:file.name,rows:[],errors:[{line:null,issues:[`Couldn't read the file: ${e.message}`]}]});}
+  };
+  const uploadCsv=async()=>{
+    if(!csv?.rows?.length) return;
+    setCsv(c=>({...c,uploading:true,done:0,result:null,failed:null}));setNotice(null);
+    let created=0,updated=0;
+    for(let i=0;i<csv.rows.length;i+=GEO_CSV_BATCH){
+      const batch=csv.rows.slice(i,i+GEO_CSV_BATCH);
+      try{
+        const r=await fetch("/api/enterprise/geothermal/readings",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({readings:batch})});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok){
+          if(Array.isArray(d.details))d.details=d.details.map(x=>x.row?{...x,row:x.row+i}:x);
+          setCsv(c=>({...c,uploading:false,failed:`${i?`Readings 1–${i} were saved. `:""}${geoErrorText(d,"Upload failed")}`}));refresh();return;
+        }
+        created+=d.created||0;updated+=d.updated||0;
+        setCsv(c=>({...c,done:Math.min(i+GEO_CSV_BATCH,csv.rows.length)}));
+      }catch{setCsv(c=>({...c,uploading:false,failed:`Network error after ${i} readings. Re-upload the same file — saved rows will be updated, not duplicated.`}));refresh();return;}
+    }
+    setCsv(c=>({...c,uploading:false,result:{created,updated}}));
+    setNotice({type:"success",text:`CSV import complete: ${created} new reading${created===1?"":"s"}${updated?`, ${updated} updated`:""}.`});
+    refresh();
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   if(loading&&!data) return <div style={{textAlign:"center",padding:60,color:T_E.dim,fontSize:12}}>Loading energy and water intelligence…</div>;
-  if(!data) return <div style={{textAlign:"center",padding:60,color:T_E.dim,fontSize:12}}>Could not load the Energy & Water module.</div>;
-  const {metrics,portfolio,properties,assets,ppas,trend}=data;
-  const eff=metrics.efficiency,tot=metrics.totals;
-  const tabs=["overview","assets","contracts","readings"];
+  if(!data) return <div style={{textAlign:"center",padding:60,color:T_E.dim,fontSize:12}}>Could not load the Energy & Water module.{notice?.text?` ${notice.text}`:""}</div>;
+  const {metrics,portfolio,ppas,trend}=data;
+  const eff=metrics.efficiency,tot=metrics.totals,counts=metrics.reportedCounts||{};
+  const tabs=[["overview","Overview"],["assets","Assets"],["contracts","Contracts"],["readings","Readings"],["import","Import & API"]];
+  const geoAssets=assets.filter(a=>a.type==="GEOTHERMAL_GENERATION");
+  const endpoint=`${typeof window!=="undefined"?window.location.origin:"https://gridguide.ai"}/api/enterprise/geothermal/readings`;
+  const twoCol={display:"grid",gridTemplateColumns:"1fr 1fr",gap:8};
+  const coverageNote=k=>metrics.readingCount>0&&counts[k]>0&&counts[k]<metrics.readingCount?` (${counts[k]} of ${metrics.readingCount})`:"";
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:18}}>
       <div><h2 style={{fontFamily:"'Space Grotesk'",fontSize:18,fontWeight:700,color:T_E.text,marginBottom:4}}>Data Center Energy & Water</h2>
-        <p style={{fontSize:12,color:T_E.muted,maxWidth:720}}>Monitor geothermal supply, PPAs, facility efficiency and measured cooling-water performance. Values remain blank until verified readings are entered or integrated.</p></div>
-      <select value={days} onChange={e=>setDays(e.target.value)} style={{...fieldStyle,width:145}}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>
+        <p style={{fontSize:12,color:T_E.muted,maxWidth:720}}>Monitor geothermal supply, PPAs, facility efficiency and measured cooling-water performance. Values stay blank until verified readings are entered or integrated — missing data is never shown as zero.</p></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <select aria-label="Property" value={propertyFilter} onChange={e=>setPropertyFilter(e.target.value)} style={{...fieldStyle,width:isMobile?"100%":170}}><option value="">All properties</option>{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <select aria-label="Date range" value={range} onChange={e=>setRange(e.target.value)} style={{...fieldStyle,width:isMobile?"100%":145}}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option><option value="custom">Custom range…</option></select>
+        {range==="custom"&&<><input aria-label="From" type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{...fieldStyle,width:140}}/><input aria-label="To" type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{...fieldStyle,width:140}}/></>}
+      </div>
     </div>
-    {notice&&<div style={{padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:11,background:notice.type==="error"?`${SH.red}16`:`${SH.green}16`,border:`1px solid ${notice.type==="error"?SH.red:SH.green}44`,color:notice.type==="error"?SH.red:SH.green}}>{notice.text}</div>}
-    <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{tabs.map(t=><button key={t} onClick={()=>setPanel(t)} style={{padding:"7px 12px",borderRadius:8,border:`1px solid ${panel===t?ENT.accent:T_E.bord}`,background:panel===t?`${ENT.accent}22`:T_E.surf,color:panel===t?T_E.text:T_E.muted,fontSize:11,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}</div>
+    {range==="custom"&&!customValid&&<div style={{fontSize:11,color:SH.gold,marginBottom:12}}>Choose a start and end date (start on or before end) to update the figures.</div>}
+    {notice&&<div role="status" style={{padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:11,lineHeight:1.5,background:notice.type==="error"?`${SH.red}16`:`${SH.green}16`,border:`1px solid ${notice.type==="error"?SH.red:SH.green}44`,color:notice.type==="error"?SH.red:SH.green,display:"flex",justifyContent:"space-between",gap:10}}><span>{notice.text}</span><button onClick={()=>setNotice(null)} aria-label="Dismiss" style={{background:"none",border:"none",color:"inherit",cursor:"pointer",fontSize:13}}>×</button></div>}
+    <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{tabs.map(([t,l])=><button key={t} onClick={()=>setPanel(t)} style={{padding:"7px 12px",borderRadius:8,border:`1px solid ${panel===t?ENT.accent:T_E.bord}`,background:panel===t?`${ENT.accent}22`:T_E.surf,color:panel===t?T_E.text:T_E.muted,fontSize:11,fontWeight:600,cursor:"pointer"}}>{l}</button>)}{loading&&<span style={{fontSize:10,color:T_E.dim,alignSelf:"center"}}>Updating…</span>}</div>
 
     {panel==="overview"&&<>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":isTablet?"repeat(3,1fr)":"repeat(5,1fr)",gap:10,marginBottom:16}}>
-        <StatCard icon="zap" label="Geothermal Coverage" value={eff.geothermalCoveragePct==null?"—":`${eff.geothermalCoveragePct}%`} delta={null} color={SH.green} T={T_E}/>
-        <StatCard icon="trending" label="PUE" value={eff.pue==null?"—":eff.pue} delta={null} color={SH.purple} T={T_E}/>
-        <StatCard icon="droplet" label="WUE L/IT kWh" value={eff.wueLitersPerItKwh==null?"—":eff.wueLitersPerItKwh} delta={null} color={SH.teal} T={T_E}/>
-        <StatCard icon="leaf" label="CO₂ Avoided" value={`${number(tot.carbonAvoidedKg)} kg`} delta={null} color={SH.green} T={T_E}/>
-        <StatCard icon="file" label="Contracted Capacity" value={`${number(portfolio.contractedMw)} MW`} delta={null} color={SH.gold} T={T_E}/>
+        <StatCard icon="zap" label="Geothermal Coverage" value={eff.geothermalCoveragePct==null?"—":`${eff.geothermalCoveragePct}%`} color={SH.green} T={T_E}/>
+        <StatCard icon="trending" label="PUE" value={eff.pue==null?"—":eff.pue} color={SH.purple} T={T_E}/>
+        <StatCard icon="droplet" label="WUE L/IT kWh" value={eff.wueLitersPerItKwh==null?"—":eff.wueLitersPerItKwh} color={SH.teal} T={T_E}/>
+        <StatCard icon="leaf" label="CO₂ Avoided" value={qty(tot.carbonAvoidedKg,"kg")} color={SH.green} T={T_E}/>
+        <StatCard icon="file" label="Contracted Capacity" value={`${number(portfolio.contractedMw)} MW`} color={SH.gold} T={T_E}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.1fr .9fr",gap:14}}>
-        <PCard T={T_E} title={`Measured Performance · ${metrics.readingCount} reading${metrics.readingCount===1?"":"s"}`}>
-          {metrics.readingCount===0?<div style={{textAlign:"center",padding:"26px 10px",color:T_E.dim,fontSize:12}}>No verified readings in this period. A Manager can add a manual reading or connect a meter, BMS or DCIM source through the API.</div>:
-          [["Facility energy",`${number(tot.facilityEnergyKwh)} kWh`],["Geothermal delivered",`${number(tot.geothermalDeliveredKwh)} kWh`],["Grid energy",`${number(tot.gridEnergyKwh)} kWh`],["Cooling energy",`${number(tot.coolingEnergyKwh)} kWh`],["Water consumed",`${number(tot.waterConsumedGallons)} gal`],["Water saved vs. baseline",`${number(tot.waterSavedGallons)} gal`],["Water recycled",`${number(tot.waterRecycledGallons)} gal`],["Recycled Water Share (%)",eff.recycledWaterSharePct==null?"No data":`${eff.recycledWaterSharePct}%`]].map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T_E.bord}44`,fontSize:12}}><span style={{color:T_E.muted}}>{k}</span><strong style={{color:T_E.text}}>{v}</strong></div>)}
+        <PCard T={T_E} title={`Measured Performance · ${metrics.readingCount} reading${metrics.readingCount===1?"":"s"}${propertyFilter?` · ${propertyName(propertyFilter)}`:""}`}>
+          {metrics.readingCount===0?<GeoEmpty>No verified readings in this period. A Manager can add a reading, import a CSV, or connect a meter, BMS or DCIM source through the API.</GeoEmpty>:<>
+            {GEO_MEASUREMENTS.filter(([k])=>k!=="carbonAvoidedKg"&&k!=="baselineWaterConsumedGallons").map(([k,l,u])=><GeoRow key={k} k={`${l}${coverageNote(k)}`} v={qty(tot[k],u)}/>)}
+            <GeoRow k="Water saved vs. baseline" v={qty(tot.waterSavedGallons,"gal")}/>
+            <GeoRow k="Cooling share of facility energy" v={eff.coolingSharePct==null?"No data":`${eff.coolingSharePct}%`}/>
+            <GeoRow k="Recycled Water Share (%)" v={eff.recycledWaterSharePct==null?"No data":`${eff.recycledWaterSharePct}%`}/>
+            <div style={{fontSize:10,color:T_E.dim,lineHeight:1.5,marginTop:10}}>Ratios only use readings that reported both of their inputs. "(n of N)" means only some readings in this period reported that measurement.</div>
+          </>}
         </PCard>
         <PCard T={T_E} title="Portfolio & Contracts">
-          {[["Energy assets",portfolio.assetCount],["Active assets",portfolio.activeAssetCount],["Geothermal PPAs",ppas.length],["Known estimated contract value",money(portfolio.knownEstimatedContractValue||null)]].map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T_E.bord}44`,fontSize:12}}><span style={{color:T_E.muted}}>{k}</span><strong style={{color:T_E.text}}>{v}</strong></div>)}
+          <GeoRow k="Energy assets" v={portfolio.assetCount}/>
+          <GeoRow k="Active assets" v={portfolio.activeAssetCount}/>
+          <GeoRow k="Geothermal PPAs" v={ppas.length}/>
+          <GeoRow k={`Known estimated contract value${portfolio.pricedPpaCount!=null&&ppas.length?` (${portfolio.pricedPpaCount} of ${ppas.length} priced)`:""}`} v={money(portfolio.knownEstimatedContractValue)}/>
           <div style={{fontSize:10,color:T_E.dim,lineHeight:1.5,marginTop:10}}>Contract estimates appear only when an authorized user enters the actual price per MWh. GridGuide does not infer confidential pricing.</div>
         </PCard>
       </div>
-      {trend.length>0&&<PCard T={T_E} title="Recent Daily Measurements" style={{marginTop:14}}>{trend.slice(-7).reverse().map(day=><div key={day.date} style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.2fr repeat(4,1fr)",gap:8,padding:"9px 0",borderBottom:`1px solid ${T_E.bord}33`,fontSize:11}}><span style={{color:T_E.text}}>{new Date(`${day.date}T12:00:00`).toLocaleDateString()}</span><span style={{color:T_E.muted}}>{number(day.totals.geothermalDeliveredKwh)} geo kWh</span><span style={{color:T_E.muted}}>{number(day.totals.gridEnergyKwh)} grid kWh</span><span style={{color:T_E.muted}}>{number(day.totals.waterConsumedGallons)} gal</span><span style={{color:SH.green}}>{number(day.totals.carbonAvoidedKg)} kg CO₂</span></div>)}</PCard>}
+      {trend.length>0&&<PCard T={T_E} title="Recent Daily Measurements" style={{marginTop:14}}>
+        {!isMobile&&<div style={{display:"grid",gridTemplateColumns:"1.2fr repeat(4,1fr)",gap:8,padding:"0 0 6px",fontSize:10,color:T_E.dim,textTransform:"uppercase",letterSpacing:".04em"}}><span>Day (UTC)</span><span>Geothermal</span><span>Grid</span><span>Water consumed</span><span>CO₂ avoided</span></div>}
+        {trend.slice(-7).reverse().map(day=><div key={day.date} style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1.2fr repeat(4,1fr)",gap:8,padding:"9px 0",borderBottom:`1px solid ${T_E.bord}33`,fontSize:11}}><span style={{color:T_E.text}}>{new Date(`${day.date}T12:00:00Z`).toLocaleDateString(undefined,{timeZone:"UTC"})}</span><span style={{color:T_E.muted}}>{qty(day.totals.geothermalDeliveredKwh,"kWh")}</span><span style={{color:T_E.muted}}>{qty(day.totals.gridEnergyKwh,"kWh")}</span><span style={{color:T_E.muted}}>{qty(day.totals.waterConsumedGallons,"gal")}</span><span style={{color:day.totals.carbonAvoidedKg==null?T_E.dim:SH.green}}>{qty(day.totals.carbonAvoidedKg,"kg")}</span></div>)}
+      </PCard>}
     </>}
 
     {panel==="assets"&&<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":canManage?"1.2fr .8fr":"1fr",gap:14}}>
-      <PCard T={T_E} title={`Energy Assets (${assets.length})`}>{assets.length===0?<div style={{textAlign:"center",padding:25,color:T_E.dim,fontSize:12}}>No geothermal or supporting energy assets have been registered.</div>:assets.map(a=><div key={a.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"10px 0",borderBottom:`1px solid ${T_E.bord}33`}}><div><div style={{fontSize:13,color:T_E.text,fontWeight:600}}>{a.name}</div><div style={{fontSize:10,color:T_E.muted,marginTop:3}}>{a.type.replaceAll("_"," ")} · {a.property?.name||"Portfolio-wide"}{a.provider?` · ${a.provider}`:""}</div></div><div style={{textAlign:"right"}}><Badge color={a.status==="ACTIVE"?SH.green:a.status==="CONSTRUCTION"?SH.gold:SH.purple}>{a.status}</Badge><div style={{fontSize:10,color:T_E.dim,marginTop:4}}>{a.ratedCapacityKw?`${number(a.ratedCapacityKw)} kW`:"Capacity pending"}</div></div></div>)}</PCard>
-      {canManage&&<PCard T={T_E} title="Add Energy Asset"><div style={{display:"grid",gap:9}}>
-        <label><span style={labelStyle}>Asset name</span><input style={fieldStyle} value={assetForm.name} onChange={e=>setAssetForm(f=>({...f,name:e.target.value}))} placeholder="e.g. North Campus Geothermal"/></label>
-        <label><span style={labelStyle}>Property</span><select style={fieldStyle} value={assetForm.propertyId} onChange={e=>setAssetForm(f=>({...f,propertyId:e.target.value}))}><option value="">Portfolio-wide</option>{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label><span style={labelStyle}>Asset type</span><select style={fieldStyle} value={assetForm.type} onChange={e=>setAssetForm(f=>({...f,type:e.target.value}))}>{["GEOTHERMAL_GENERATION","GROUND_SOURCE_HEAT_PUMP","THERMAL_STORAGE","BATTERY","UPS","CHILLER","GRID_CONNECTION","SOLAR"].map(x=><option key={x}>{x}</option>)}</select></label>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><label><span style={labelStyle}>Provider</span><input style={fieldStyle} value={assetForm.provider} onChange={e=>setAssetForm(f=>({...f,provider:e.target.value}))}/></label><label><span style={labelStyle}>Capacity kW</span><input type="number" min="0" style={fieldStyle} value={assetForm.ratedCapacityKw} onChange={e=>setAssetForm(f=>({...f,ratedCapacityKw:e.target.value}))}/></label></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><label><span style={labelStyle}>Cooling type</span><select style={fieldStyle} value={assetForm.coolingType} onChange={e=>setAssetForm(f=>({...f,coolingType:e.target.value}))}>{["AIR","WATER","HYBRID","CLOSED_LOOP","GROUND_SOURCE","OTHER"].map(x=><option key={x}>{x}</option>)}</select></label><label><span style={labelStyle}>Water source</span><select style={fieldStyle} value={assetForm.waterSource} onChange={e=>setAssetForm(f=>({...f,waterSource:e.target.value}))}>{["NONE","CLOSED_LOOP","RECLAIMED","MUNICIPAL","GROUNDWATER","SURFACE","OTHER"].map(x=><option key={x}>{x}</option>)}</select></label></div>
-        <Btn T={T_E} disabled={saving||!assetForm.name} onClick={async()=>{const body={...assetForm,propertyId:assetForm.propertyId||null,provider:assetForm.provider||null,ratedCapacityKw:assetForm.ratedCapacityKw||null};if(await submit("/api/enterprise/geothermal/assets",body,"Energy asset added."))setAssetForm(f=>({...f,name:"",provider:"",ratedCapacityKw:""}));}}>{saving?"Saving…":"Add Asset"}</Btn>
+      <PCard T={T_E} title={`Energy Assets (${assets.length})`}>{assets.length===0?<GeoEmpty>No geothermal or supporting energy assets have been registered{propertyFilter?" for this property":""}.</GeoEmpty>:assets.map(a=><div key={a.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"10px 0",borderBottom:`1px solid ${T_E.bord}33`,background:editingAssetId===a.id?`${ENT.accent}0d`:"transparent"}}>
+        <div style={{minWidth:0}}><div style={{fontSize:13,color:T_E.text,fontWeight:600}}>{a.name}</div><div style={{fontSize:10,color:T_E.muted,marginTop:3}}>{geoLabel(a.type)} · {a.property?.name||"Portfolio-wide"}{a.provider?` · ${a.provider}`:""}{a.commercialOperationAt?` · COD ${new Date(a.commercialOperationAt).toLocaleDateString(undefined,{timeZone:"UTC"})}`:""}</div>
+          {canManage&&<div style={{display:"flex",gap:6,marginTop:8}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>editAsset(a)}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} disabled={saving} onClick={()=>deleteAsset(a)}>Delete</PBtn></div>}</div>
+        <div style={{textAlign:"right",flexShrink:0}}><Badge color={a.status==="ACTIVE"?SH.green:a.status==="CONSTRUCTION"?SH.gold:a.status==="RETIRED"||a.status==="INACTIVE"?T_E.dim:SH.purple}>{geoLabel(a.status)}</Badge><div style={{fontSize:10,color:T_E.dim,marginTop:4}}>{a.ratedCapacityKw!=null?`${number(a.ratedCapacityKw)} kW`:"Capacity pending"}</div></div>
+      </div>)}</PCard>
+      {canManage&&<PCard T={T_E} title={editingAssetId?"Edit Energy Asset":"Add Energy Asset"} action={editingAssetId&&<PBtn sz="sm" v="outline" T={T_E} onClick={resetAsset}>Cancel</PBtn>}><div style={{display:"grid",gap:9}}>
+        <GeoField label="Asset name *"><input style={fieldStyle} value={assetForm.name} onChange={e=>setAssetForm(f=>({...f,name:e.target.value}))} placeholder="e.g. North Campus Geothermal"/></GeoField>
+        <GeoField label="Property">{select(assetForm.propertyId,v=>setAssetForm(f=>({...f,propertyId:v})),properties,{blank:"Portfolio-wide"})}</GeoField>
+        <div style={twoCol}><GeoField label="Asset type">{select(assetForm.type,v=>setAssetForm(f=>({...f,type:v})),GEO_ASSET_TYPES)}</GeoField><GeoField label="Status">{select(assetForm.status,v=>setAssetForm(f=>({...f,status:v})),GEO_ASSET_STATUSES)}</GeoField></div>
+        <div style={twoCol}><GeoField label="Provider"><input style={fieldStyle} value={assetForm.provider} onChange={e=>setAssetForm(f=>({...f,provider:e.target.value}))}/></GeoField><GeoField label="Commercial operation"><input type="date" style={fieldStyle} value={assetForm.commercialOperationAt} onChange={e=>setAssetForm(f=>({...f,commercialOperationAt:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Rated capacity kW"><input type="number" min="0" style={fieldStyle} value={assetForm.ratedCapacityKw} onChange={e=>setAssetForm(f=>({...f,ratedCapacityKw:e.target.value}))}/></GeoField><GeoField label="Thermal capacity kWh"><input type="number" min="0" style={fieldStyle} value={assetForm.thermalCapacityKwh} onChange={e=>setAssetForm(f=>({...f,thermalCapacityKwh:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Cooling type">{select(assetForm.coolingType,v=>setAssetForm(f=>({...f,coolingType:v})),GEO_COOLING,{blank:"Not specified"})}</GeoField><GeoField label="Water source">{select(assetForm.waterSource,v=>setAssetForm(f=>({...f,waterSource:v})),GEO_WATER,{blank:"Not specified"})}</GeoField></div>
+        <PBtn T={T_E} full disabled={saving||!assetForm.name.trim()} onClick={saveAsset}>{saving?"Saving…":editingAssetId?"Save Changes":"Add Asset"}</PBtn>
+        <div style={{fontSize:10,color:T_E.dim,lineHeight:1.5}}>Assets with readings or PPAs can't be deleted — set their status to Retired instead.</div>
       </div></PCard>}
     </div>}
 
     {panel==="contracts"&&<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":canManage?"1.2fr .8fr":"1fr",gap:14}}>
-      <PCard T={T_E} title={`Geothermal PPAs (${ppas.length})`}>{ppas.length===0?<div style={{textAlign:"center",padding:25,color:T_E.dim,fontSize:12}}>No geothermal power purchase agreements have been recorded.</div>:ppas.map(p=><div key={p.id} style={{padding:"11px 0",borderBottom:`1px solid ${T_E.bord}33`}}><div style={{display:"flex",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:13,color:T_E.text,fontWeight:600}}>{p.name}</div><div style={{fontSize:10,color:T_E.muted,marginTop:3}}>{p.seller}{p.utility?` through ${p.utility}`:""} · {p.contractedMw} MW · {p.termYears} years</div></div><Badge color={p.status==="ACTIVE"?SH.green:p.status==="PENDING_APPROVAL"?SH.gold:SH.purple}>{p.status}</Badge></div><div style={{fontSize:11,color:p.valueEstimate?SH.green:T_E.dim,marginTop:6}}>{p.valueEstimate?`Estimated contract value: ${money(p.valueEstimate.estimatedContractValue)}`:"Dollar value unavailable — price per MWh was not disclosed."}</div></div>)}</PCard>
-      {canManage&&<PCard T={T_E} title="Add Geothermal PPA"><div style={{display:"grid",gap:9}}>
-        <label><span style={labelStyle}>Agreement name</span><input style={fieldStyle} value={ppaForm.name} onChange={e=>setPpaForm(f=>({...f,name:e.target.value}))}/></label>
-        <label><span style={labelStyle}>Seller/developer</span><input style={fieldStyle} value={ppaForm.seller} onChange={e=>setPpaForm(f=>({...f,seller:e.target.value}))} placeholder="e.g. Ormat Technologies"/></label>
-        <label><span style={labelStyle}>Property</span><select style={fieldStyle} value={ppaForm.propertyId} onChange={e=>setPpaForm(f=>({...f,propertyId:e.target.value}))}><option value="">Portfolio-wide</option>{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label><span style={labelStyle}>Linked energy asset</span><select style={fieldStyle} value={ppaForm.assetId} onChange={e=>setPpaForm(f=>({...f,assetId:e.target.value}))}><option value="">No specific asset</option>{assets.filter(a=>a.type==="GEOTHERMAL_GENERATION").map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><label><span style={labelStyle}>Contract MW</span><input type="number" min="0.001" step="0.001" style={fieldStyle} value={ppaForm.contractedMw} onChange={e=>setPpaForm(f=>({...f,contractedMw:e.target.value}))}/></label><label><span style={labelStyle}>Term years</span><input type="number" min="1" style={fieldStyle} value={ppaForm.termYears} onChange={e=>setPpaForm(f=>({...f,termYears:e.target.value}))}/></label></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><label><span style={labelStyle}>Price $/MWh (optional)</span><input type="number" min="0" step="0.01" style={fieldStyle} value={ppaForm.pricePerMwh} onChange={e=>setPpaForm(f=>({...f,pricePerMwh:e.target.value}))}/></label><label><span style={labelStyle}>Capacity factor %</span><input type="number" min="1" max="100" style={fieldStyle} value={ppaForm.capacityFactorPct} onChange={e=>setPpaForm(f=>({...f,capacityFactorPct:e.target.value}))}/></label></div>
-        <Btn T={T_E} disabled={saving||!ppaForm.name||!ppaForm.seller||!ppaForm.contractedMw} onClick={async()=>{const body={...ppaForm,propertyId:ppaForm.propertyId||null,assetId:ppaForm.assetId||null,utility:ppaForm.utility||null,pricePerMwh:ppaForm.pricePerMwh||null,annualEscalationPct:ppaForm.annualEscalationPct||null};if(await submit("/api/enterprise/geothermal/ppas",body,"Geothermal PPA added."))setPpaForm(f=>({...f,name:"",seller:"",contractedMw:"",pricePerMwh:""}));}}>{saving?"Saving…":"Add PPA"}</Btn>
+      <PCard T={T_E} title={`Geothermal PPAs (${ppas.length})`}>{ppas.length===0?<GeoEmpty>No geothermal power purchase agreements have been recorded{propertyFilter?" for this property":""}.</GeoEmpty>:ppas.map(p=><div key={p.id} style={{padding:"11px 0",borderBottom:`1px solid ${T_E.bord}33`,background:editingPpaId===p.id?`${ENT.accent}0d`:"transparent"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10}}><div style={{minWidth:0}}><div style={{fontSize:13,color:T_E.text,fontWeight:600}}>{p.name}</div><div style={{fontSize:10,color:T_E.muted,marginTop:3}}>{p.seller}{p.utility?` through ${p.utility}`:""} · {p.contractedMw} MW · {p.termYears} years{p.asset?` · ${p.asset.name}`:""}</div>
+          {(p.deliveryStartAt||p.deliveryEndAt)&&<div style={{fontSize:10,color:T_E.dim,marginTop:3}}>Delivery {p.deliveryStartAt?new Date(p.deliveryStartAt).toLocaleDateString(undefined,{timeZone:"UTC"}):"?"} – {p.deliveryEndAt?new Date(p.deliveryEndAt).toLocaleDateString(undefined,{timeZone:"UTC"}):"?"}{p.regulatoryApproval?` · Approval: ${geoLabel(p.regulatoryApproval)}`:""}</div>}</div>
+          <Badge color={p.status==="ACTIVE"?SH.green:p.status==="PENDING_APPROVAL"?SH.gold:p.status==="EXPIRED"||p.status==="TERMINATED"?T_E.dim:SH.purple}>{geoLabel(p.status)}</Badge></div>
+        <div style={{fontSize:11,color:p.valueEstimate?SH.green:T_E.dim,marginTop:6}}>{p.valueEstimate?`Estimated contract value: ${money(p.valueEstimate.estimatedContractValue)}`:"Dollar value unavailable — price per MWh was not disclosed."}</div>
+        {p.notes&&<div style={{fontSize:10,color:T_E.muted,marginTop:4,whiteSpace:"pre-wrap"}}>{p.notes}</div>}
+        {canManage&&<div style={{display:"flex",gap:6,marginTop:8}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>editPpa(p)}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} disabled={saving} onClick={()=>deletePpa(p)}>Delete</PBtn></div>}
+      </div>)}</PCard>
+      {canManage&&<PCard T={T_E} title={editingPpaId?"Edit Geothermal PPA":"Add Geothermal PPA"} action={editingPpaId&&<PBtn sz="sm" v="outline" T={T_E} onClick={resetPpa}>Cancel</PBtn>}><div style={{display:"grid",gap:9}}>
+        <GeoField label="Agreement name *"><input style={fieldStyle} value={ppaForm.name} onChange={e=>setPpaForm(f=>({...f,name:e.target.value}))}/></GeoField>
+        <div style={twoCol}><GeoField label="Seller/developer *"><input style={fieldStyle} value={ppaForm.seller} onChange={e=>setPpaForm(f=>({...f,seller:e.target.value}))} placeholder="e.g. Ormat Technologies"/></GeoField><GeoField label="Utility"><input style={fieldStyle} value={ppaForm.utility} onChange={e=>setPpaForm(f=>({...f,utility:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Property">{select(ppaForm.propertyId,v=>setPpaForm(f=>({...f,propertyId:v})),properties,{blank:"Portfolio-wide"})}</GeoField><GeoField label="Linked asset">{select(ppaForm.assetId,v=>setPpaForm(f=>({...f,assetId:v})),geoAssets,{blank:"No specific asset"})}</GeoField></div>
+        <div style={twoCol}><GeoField label="Status">{select(ppaForm.status,v=>setPpaForm(f=>({...f,status:v})),GEO_PPA_STATUSES)}</GeoField><GeoField label="Regulatory approval">{select(ppaForm.regulatoryApproval,v=>setPpaForm(f=>({...f,regulatoryApproval:v})),GEO_APPROVALS,{blank:"Not tracked"})}</GeoField></div>
+        <div style={twoCol}><GeoField label="Contract MW *"><input type="number" min="0.001" step="0.001" style={fieldStyle} value={ppaForm.contractedMw} onChange={e=>setPpaForm(f=>({...f,contractedMw:e.target.value}))}/></GeoField><GeoField label="Term years *"><input type="number" min="1" style={fieldStyle} value={ppaForm.termYears} onChange={e=>setPpaForm(f=>({...f,termYears:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Price $/MWh (optional)"><input type="number" min="0" step="0.01" style={fieldStyle} value={ppaForm.pricePerMwh} onChange={e=>setPpaForm(f=>({...f,pricePerMwh:e.target.value}))}/></GeoField><GeoField label="Annual escalation %"><input type="number" step="0.1" style={fieldStyle} value={ppaForm.annualEscalationPct} onChange={e=>setPpaForm(f=>({...f,annualEscalationPct:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Capacity factor %"><input type="number" min="1" max="100" style={fieldStyle} value={ppaForm.capacityFactorPct} onChange={e=>setPpaForm(f=>({...f,capacityFactorPct:e.target.value}))}/></GeoField><GeoField label="Signed"><input type="date" style={fieldStyle} value={ppaForm.signedAt} onChange={e=>setPpaForm(f=>({...f,signedAt:e.target.value}))}/></GeoField></div>
+        <div style={twoCol}><GeoField label="Delivery start"><input type="date" style={fieldStyle} value={ppaForm.deliveryStartAt} onChange={e=>setPpaForm(f=>({...f,deliveryStartAt:e.target.value}))}/></GeoField><GeoField label="Delivery end"><input type="date" style={fieldStyle} value={ppaForm.deliveryEndAt} onChange={e=>setPpaForm(f=>({...f,deliveryEndAt:e.target.value}))}/></GeoField></div>
+        <GeoField label="Notes"><textarea rows={3} style={{...fieldStyle,resize:"vertical"}} value={ppaForm.notes} onChange={e=>setPpaForm(f=>({...f,notes:e.target.value}))}/></GeoField>
+        <PBtn T={T_E} full disabled={saving||!ppaForm.name.trim()||!ppaForm.seller.trim()||!ppaForm.contractedMw||!ppaForm.termYears} onClick={savePpa}>{saving?"Saving…":editingPpaId?"Save Changes":"Add PPA"}</PBtn>
       </div></PCard>}
     </div>}
 
-    {panel==="readings"&&<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":canManage?".9fr 1.1fr":"1fr",gap:14}}>
-      <PCard T={T_E} title="Data Integration"><div style={{fontSize:11,color:T_E.muted,lineHeight:1.7}}>The readings API accepts manual entries and batches of up to 500 records from meters, CSV imports, building-management systems and DCIM platforms. Every record must identify an organization-owned property; no estimates are inserted automatically.</div><div style={{marginTop:12,padding:10,background:T_E.surf,borderRadius:8,fontFamily:"monospace",fontSize:10,color:SH.teal}}>POST /api/enterprise/geothermal/readings</div></PCard>
-      {canManage&&<PCard T={T_E} title="Add Verified Reading"><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:9}}>
-        <label><span style={labelStyle}>Property *</span><select style={fieldStyle} value={readingForm.propertyId} onChange={e=>setReadingForm(f=>({...f,propertyId:e.target.value}))}><option value="">Select property</option>{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label><span style={labelStyle}>Recorded at *</span><input type="datetime-local" style={fieldStyle} value={readingForm.recordedAt} onChange={e=>setReadingForm(f=>({...f,recordedAt:e.target.value}))}/></label>
-        <label><span style={labelStyle}>Energy asset</span><select style={fieldStyle} value={readingForm.assetId} onChange={e=>setReadingForm(f=>({...f,assetId:e.target.value}))}><option value="">No specific asset</option>{assets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-        {[["facilityEnergyKwh","Facility kWh"],["itEnergyKwh","IT equipment kWh"],["geothermalDeliveredKwh","Geothermal kWh"],["gridEnergyKwh","Grid kWh"],["coolingEnergyKwh","Cooling kWh"],["waterWithdrawnGallons","New water withdrawn gal (excl. recycled)"],["waterConsumedGallons","Water consumed gal"],["baselineWaterConsumedGallons","Baseline water consumed gal"],["waterRecycledGallons","Water recycled gal"],["carbonAvoidedKg","CO₂ avoided kg"]].map(([key,label])=><label key={key}><span style={labelStyle}>{label}</span><input type="number" min="0" step="0.001" style={fieldStyle} value={readingForm[key]} onChange={e=>setReadingForm(f=>({...f,[key]:e.target.value}))}/></label>)}
-        <div style={{gridColumn:isMobile?"auto":"1 / -1"}}><Btn T={T_E} full disabled={saving||!readingForm.propertyId||!readingForm.recordedAt} onClick={async()=>{const body={...readingForm,recordedAt:new Date(readingForm.recordedAt).toISOString(),assetId:readingForm.assetId||null};for(const key of ["facilityEnergyKwh","itEnergyKwh","geothermalDeliveredKwh","gridEnergyKwh","coolingEnergyKwh","waterWithdrawnGallons","waterConsumedGallons","baselineWaterConsumedGallons","waterRecycledGallons","carbonAvoidedKg"])body[key]=body[key]||0;if(await submit("/api/enterprise/geothermal/readings",body,"Verified reading saved."))setReadingForm(f=>({...f,facilityEnergyKwh:"",itEnergyKwh:"",geothermalDeliveredKwh:"",gridEnergyKwh:"",coolingEnergyKwh:"",waterWithdrawnGallons:"",waterConsumedGallons:"",baselineWaterConsumedGallons:"",waterRecycledGallons:"",carbonAvoidedKg:""}));}}>{saving?"Saving…":"Save Reading"}</Btn></div>
+    {panel==="readings"&&<div style={{display:"grid",gap:14}}>
+      {canManage&&<PCard T={T_E} title={editingReadingId?"Edit Reading":"Add Verified Reading"} action={editingReadingId&&<PBtn sz="sm" v="outline" T={T_E} onClick={resetReading}>Cancel</PBtn>}><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":isTablet?"1fr 1fr":"repeat(4,1fr)",gap:9}}>
+        <GeoField label="Property *">{select(readingForm.propertyId,v=>setReadingForm(f=>({...f,propertyId:v})),properties,{blank:"Select property"})}</GeoField>
+        <GeoField label="Recorded at *"><input type="datetime-local" style={fieldStyle} value={readingForm.recordedAt} onChange={e=>setReadingForm(f=>({...f,recordedAt:e.target.value}))}/></GeoField>
+        <GeoField label="Energy asset">{select(readingForm.assetId,v=>setReadingForm(f=>({...f,assetId:v})),assets,{blank:"No specific asset"})}</GeoField>
+        <GeoField label="Interval minutes"><input type="number" min="1" max="44640" style={fieldStyle} value={readingForm.intervalMinutes} onChange={e=>setReadingForm(f=>({...f,intervalMinutes:e.target.value}))}/></GeoField>
+        {GEO_MEASUREMENTS.map(([key,,,label])=><GeoField key={key} label={label}><input type="number" min="0" step="0.001" placeholder="Not measured" style={fieldStyle} value={readingForm[key]} onChange={e=>setReadingForm(f=>({...f,[key]:e.target.value}))}/></GeoField>)}
+        <div style={{gridColumn:"1 / -1",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <PBtn T={T_E} disabled={saving||!readingForm.propertyId||!readingForm.recordedAt||!readingHasValue} onClick={saveReading}>{saving?"Saving…":editingReadingId?"Save Changes":"Save Reading"}</PBtn>
+          <span style={{fontSize:10,color:T_E.dim}}>Leave anything you didn't measure blank — it's recorded as "No data", not zero. At least one value is required.</span>
+        </div>
       </div></PCard>}
+      <PCard T={T_E} title={`Readings${propertyFilter?` · ${propertyName(propertyFilter)}`:""}`} action={<PBtn sz="sm" v="outline" T={T_E} onClick={()=>loadReadings()} disabled={readingsLoading}>Refresh</PBtn>}>
+        {readingsLoading&&readings.length===0?<GeoEmpty>Loading readings…</GeoEmpty>:readings.length===0?<GeoEmpty>No readings in this period.</GeoEmpty>:<>
+          {!isMobile&&<div style={{display:"grid",gridTemplateColumns:"1.3fr 1.1fr .7fr repeat(4,.8fr)"+(canManage?" 1fr":""),gap:8,padding:"0 0 6px",fontSize:10,color:T_E.dim,textTransform:"uppercase",letterSpacing:".04em"}}><span>Recorded</span><span>Property / asset</span><span>Source</span><span>Facility kWh</span><span>IT kWh</span><span>Geo kWh</span><span>Water gal</span>{canManage&&<span/>}</div>}
+          {readings.map(r=><div key={r.id} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.3fr 1.1fr .7fr repeat(4,.8fr)"+(canManage?" 1fr":""),gap:isMobile?3:8,padding:"9px 0",borderBottom:`1px solid ${T_E.bord}33`,fontSize:11,alignItems:"center",background:editingReadingId===r.id?`${ENT.accent}0d`:"transparent"}}>
+            <span style={{color:T_E.text}}>{new Date(r.recordedAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}<span style={{color:T_E.dim}}> · {r.intervalMinutes}m</span></span>
+            <span style={{color:T_E.muted}}>{r.property?.name||propertyName(r.propertyId)}{r.asset?` · ${r.asset.name}`:""}</span>
+            <span><Badge color={r.source==="MANUAL"?SH.purple:SH.teal}>{r.source}</Badge></span>
+            {isMobile?<span style={{color:T_E.muted}}>Facility {number(r.facilityEnergyKwh)} · IT {number(r.itEnergyKwh)} · Geo {number(r.geothermalDeliveredKwh)} kWh · Water {number(r.waterConsumedGallons)} gal</span>:<>
+              <span style={{color:T_E.muted}}>{number(r.facilityEnergyKwh)}</span><span style={{color:T_E.muted}}>{number(r.itEnergyKwh)}</span><span style={{color:T_E.muted}}>{number(r.geothermalDeliveredKwh)}</span><span style={{color:T_E.muted}}>{number(r.waterConsumedGallons)}</span></>}
+            {canManage&&<span style={{display:"flex",gap:6,justifyContent:isMobile?"flex-start":"flex-end"}}><PBtn sz="sm" v="outline" T={T_E} onClick={()=>editReading(r)}>Edit</PBtn><PBtn sz="sm" v="danger" T={T_E} disabled={saving} onClick={()=>deleteReading(r)}>Delete</PBtn></span>}
+          </div>)}
+          {readingsCursor&&<div style={{textAlign:"center",marginTop:12}}><PBtn sz="sm" v="ghost" T={T_E} disabled={readingsLoading} onClick={()=>loadReadings(readingsCursor)}>{readingsLoading?"Loading…":"Load more"}</PBtn></div>}
+          <div style={{fontSize:10,color:T_E.dim,marginTop:10}}>"—" means that value wasn't measured for the reading.</div>
+        </>}
+      </PCard>
+    </div>}
+
+    {panel==="import"&&<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
+      <PCard T={T_E} title="Import Readings from CSV">
+        {!canManage?<GeoEmpty>Importing readings requires Manager access or higher.</GeoEmpty>:<div style={{display:"grid",gap:10}}>
+          <div style={{fontSize:11,color:T_E.muted,lineHeight:1.7}}>One row per reading. Identify the property by <code>propertyId</code> or its exact <code>property</code> name, and the optional asset by <code>assetId</code> or <code>asset</code> name. Leave unmeasured values empty. Times without a timezone are read as your local time. Re-importing the same file updates those readings instead of duplicating them.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <PBtn sz="sm" v="outline" T={T_E} onClick={downloadTemplate}>Download template</PBtn>
+            <label style={{display:"inline-flex"}}><input type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)parseCsvFile(f);e.target.value="";}}/><span style={{padding:"6px 13px",fontSize:11,borderRadius:8,border:`1px solid ${ENT.accent}44`,color:ENT.accent,cursor:"pointer",fontWeight:600,fontFamily:"'Space Grotesk'"}}>Choose CSV file…</span></label>
+          </div>
+          {csv&&<div style={{background:T_E.surf,border:`1px solid ${T_E.bord}`,borderRadius:8,padding:12,fontSize:11,color:T_E.muted,display:"grid",gap:6}}>
+            <div style={{color:T_E.text,fontWeight:600}}>{csv.fileName}</div>
+            {csv.parsing?<div>Reading file…</div>:<>
+              <div><span style={{color:SH.green}}>{csv.rows.length} valid</span>{csv.errors.length?<span style={{color:SH.red}}> · {csv.errors.length} with problems</span>:""}{csv.totalLines!=null?` of ${csv.totalLines} rows`:""}</div>
+              {csv.errors.length>0&&<div style={{maxHeight:140,overflowY:"auto",color:SH.red,lineHeight:1.6}}>{csv.errors.slice(0,50).map((e,i)=><div key={i}>{e.line?`Line ${e.line}: `:""}{e.issues.join("; ")}</div>)}{csv.errors.length>50&&<div>…and {csv.errors.length-50} more</div>}</div>}
+              {csv.errors.length>0&&csv.rows.length>0&&<div style={{color:SH.gold}}>Rows with problems will be skipped. Fix them and re-import the file to add them later.</div>}
+              {csv.uploading&&<div>Uploading… {csv.done||0} of {csv.rows.length}</div>}
+              {csv.failed&&<div style={{color:SH.red}}>{csv.failed}</div>}
+              {csv.result&&<div style={{color:SH.green}}>Done: {csv.result.created} new, {csv.result.updated} updated.</div>}
+              <div style={{display:"flex",gap:8}}>
+                <PBtn sz="sm" T={T_E} disabled={csv.uploading||!csv.rows.length||!!csv.result} onClick={uploadCsv}>{csv.uploading?"Uploading…":`Import ${csv.rows.length} reading${csv.rows.length===1?"":"s"}`}</PBtn>
+                <PBtn sz="sm" v="outline" T={T_E} disabled={csv.uploading} onClick={()=>setCsv(null)}>Clear</PBtn>
+              </div>
+            </>}
+          </div>}
+          <details style={{fontSize:10,color:T_E.dim}}><summary style={{cursor:"pointer"}}>Columns</summary><div style={{marginTop:6,lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-word"}}>{csvHeaders.join(", ")}</div></details>
+        </div>}
+      </PCard>
+      <PCard T={T_E} title="Connect a Meter, BMS or DCIM System">
+        <div style={{fontSize:11,color:T_E.muted,lineHeight:1.7}}>Integrations send readings with an Enterprise API key. Keys can read your properties, assets and readings and add readings — nothing else.</div>
+        <div style={{marginTop:10,display:"grid",gap:6,fontSize:11,color:T_E.muted,lineHeight:1.6}}>
+          <div>1. An Admin creates a key under <strong style={{color:T_E.text}}>API Keys</strong>.</div>
+          <div>2. Look up property IDs: <code style={{color:SH.teal}}>GET /api/enterprise/geothermal/properties</code></div>
+          <div>3. Send up to 500 readings per request. Include an <code>externalId</code> on each so retries and corrections update instead of duplicating. Omit anything not measured.</div>
+        </div>
+        <pre style={{marginTop:10,padding:10,background:T_E.surf,borderRadius:8,fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:SH.teal,overflowX:"auto",whiteSpace:"pre"}}>{`curl -X POST ${endpoint} \\
+  -H "Authorization: Bearer gg_live_…" \\
+  -H "Content-Type: application/json" \\
+  -d '{"readings":[{
+    "propertyId":"${properties[0]?.id||"PROPERTY_ID"}",
+    "recordedAt":"2026-10-01T14:00:00Z",
+    "intervalMinutes":60,
+    "facilityEnergyKwh":1200,
+    "itEnergyKwh":1000,
+    "geothermalDeliveredKwh":900,
+    "externalId":"meter-7:2026-10-01T14"
+  }]}'`}</pre>
+        <div style={{fontSize:10,color:T_E.dim,marginTop:8}}>Limit: 120 requests per minute per key. Readings sent with a key are tagged source "API" unless you set another source (METER, DCIM, BMS).</div>
+        {canManageKeys&&setTab&&<div style={{marginTop:10}}><PBtn sz="sm" v="ghost" T={T_E} onClick={()=>setTab("api")}>Manage API keys →</PBtn></div>}
+      </PCard>
     </div>}
   </div>;
 }
@@ -22126,7 +22444,7 @@ function EnterpriseApp() {
       case"analytics":   return <EntAnalytics/>;
       case"revenue":     return <EntRevenue/>;
       case"carbon":      return <EntCarbon/>;
-      case"geothermal":  return <EntGeothermal/>;
+      case"geothermal":  return <EntGeothermal setTab={setTab}/>;
       case"installer-network": return <EntInstallerNetwork/>;
       case"users":       return <EntUsers setTab={setTab}/>;
       case"referrals":  return <EntReferrals setTab={setTab} user={user}/>;
