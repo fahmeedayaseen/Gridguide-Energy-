@@ -7,15 +7,16 @@ import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import Stripe from "stripe";
 import { z } from "zod";
+import { getInstallerSuccessFeeRates } from "@/lib/platform-config.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", { apiVersion: "2024-04-10" });
 
 const PLANS = {
-  FREE:       { price: 0,   shareRate: 0.15, vppShare: 0.00, trial: null, leadSuccessFee: 0.08,  // 8% on GridGuide-generated leads
+  FREE:       { price: 0,   shareRate: 0.15, vppShare: 0.00, trial: null, // leadSuccessFee filled in from lib/platform-config.js at request time
     features: ["Company profile","Basic lead management","Add installations","Refer homeowners","Basic reporting"] },
-  PRO:        { price: 99,  shareRate: 0.25, vppShare: 0.05, trial: 14,   leadSuccessFee: 0.05,  // 5% — reward for Pro investment
+  PRO:        { price: 99,  shareRate: 0.25, vppShare: 0.05, trial: 14,
     features: ["Everything in Free","Priority directory placement","Lead tracking dashboard","Proposal tools","Customer onboarding tools","Utility interconnection tracking","25% recurring referral revenue"] },
-  ENTERPRISE: { price: 499, shareRate: 0.30, vppShare: 0.10, trial: null, leadSuccessFee: 0.03,  // 3% — highest tier, lowest fee
+  ENTERPRISE: { price: 499, shareRate: 0.30, vppShare: 0.10, trial: null,
     features: ["Everything in Pro","Multi-user accounts","Territory management","CRM integrations","White-label homeowner onboarding","API access","Dedicated account manager","Bulk homeowner imports"] },
 };
 // Enterprise uses a guided 30-day pilot (sales-assisted), not a self-serve trial.
@@ -38,9 +39,10 @@ export async function GET(request) {
   });
   if (!installer) return err("Installer account not found.", 404);
 
+  const feeRates = await getInstallerSuccessFeeRates();
   return ok({
     current: installer,
-    plans:   PLANS,
+    plans:   Object.fromEntries(Object.entries(PLANS).map(([id, p]) => [id, { ...p, leadSuccessFee: feeRates[id] }])),
     upgradeImpact: {
       fromPro: {
         extraSharePct:      5,

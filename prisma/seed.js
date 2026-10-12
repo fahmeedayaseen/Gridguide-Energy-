@@ -20,26 +20,49 @@ async function main() {
   console.log("🌱 Seeding GridGuide production database...\n");
 
   // ── System Admin ───────────────────────────────────────────────────────────
-  // IMPORTANT: Change this password immediately after first deploy.
-  const adminEmail    = process.env.ADMIN_EMAIL    || "admin@gridguide.ai";
-  const adminPassword = process.env.ADMIN_PASSWORD || "ChangeMe#2026!";
+  // Production seed policy (Audit §9): no demo accounts, no fake data, and no
+  // admin account with a password that's written in this repository.
+  const IS_PROD = process.env.NODE_ENV === "production";
+  const KNOWN_DEFAULT = "ChangeMe#2026!";
+  const adminEmail    = (process.env.ADMIN_EMAIL || "admin@gridguide.ai").toLowerCase().trim();
+  const adminPassword = process.env.ADMIN_PASSWORD || (IS_PROD ? null : KNOWN_DEFAULT);
 
-  const adminHash = await bcrypt.hash(adminPassword, 12);
-  const admin = await prisma.user.upsert({
-    where:  { email: adminEmail },
-    update: { passwordHash: adminHash },
-    create: {
-      name:          "GridGuide Admin",
-      email:         adminEmail,
-      passwordHash:  adminHash,
-      role:          "ADMIN",
-      plan:          "HOMEOWNER_PREMIUM",
-      emailVerified: true,
-      rewards: { create: { points: 0, tier: "Bronze" } },
-    },
-  });
+  if (!adminPassword || (IS_PROD && (adminPassword === KNOWN_DEFAULT || adminPassword.length < 14))) {
+    throw new Error(
+      "Set ADMIN_PASSWORD (14+ characters, not the documented default) to seed the admin account in production."
+    );
+  }
+
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  let admin;
+  if (existingAdmin) {
+    // Re-running the seed must never silently reset a live admin's password
+    // (the old upsert did, back to the default). Opt in explicitly to rotate it.
+    if (process.env.ADMIN_RESET_PASSWORD === "true") {
+      admin = await prisma.user.update({
+        where: { email: adminEmail },
+        data:  { passwordHash: await bcrypt.hash(adminPassword, 12) },
+      });
+      console.log("  Admin password reset (ADMIN_RESET_PASSWORD=true).");
+    } else {
+      admin = existingAdmin;
+      console.log("  Admin already exists — password left unchanged.");
+    }
+  } else {
+    admin = await prisma.user.create({
+      data: {
+        name:          "GridGuide Admin",
+        email:         adminEmail,
+        passwordHash:  await bcrypt.hash(adminPassword, 12),
+        role:          "ADMIN",
+        plan:          "HOMEOWNER_PREMIUM",
+        emailVerified: true,
+        rewards: { create: { points: 0, tier: "Bronze" } },
+      },
+    });
+  }
   console.log("✓ Admin account:", admin.email);
-  console.log("  ⚠️  Change the admin password after first login.\n");
+  if (!IS_PROD) console.log("  ⚠️  Development default password in use — never deploy this.\n");
 
   // ── Platform Config (singleton) ──────────────────────────────────────────
   // Seeds the admin-adjustable rates: installer revenue share, credit

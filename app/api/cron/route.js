@@ -1,6 +1,6 @@
 import { ok, err } from "@/lib/auth.js";
 import { logger, alertCritical } from "@/lib/sentry.js";
-import { requireSecret, IS_PROD } from "@/lib/secrets.js";
+import { verifyCronRequest } from "@/lib/secrets.js";
 import {
   processBiweeklySellerPayouts,
   thermostatAiOptimizer,
@@ -10,21 +10,9 @@ import {
 } from "@/lib/cron.js";
 
 // Verify the request is from Vercel Cron or an authorized internal call.
-// In production, a missing CRON_SECRET means every request is rejected —
-// this endpoint triggers real financial jobs (seller payouts, commission
-// runs) and must never fall back to "no auth required".
-function verifyCronSecret(request) {
-  let secret;
-  try {
-    secret = requireSecret("CRON_SECRET");
-  } catch (e) {
-    logger.error(`[Cron] ${e.message}`);
-    return false;
-  }
-  if (!secret) return !IS_PROD; // only reachable in development
-  const authHeader = request.headers.get("Authorization");
-  return authHeader === `Bearer ${secret}`;
-}
+// Rejects everything when CRON_SECRET is unset (see lib/secrets.js) — this
+// endpoint triggers real financial jobs (seller payouts, commission runs).
+const verifyCronSecret = verifyCronRequest;
 
 /**
  * POST /api/cron?job=seller-payouts|thermostat-ai|device-sync|weekly-digest|vpp-status

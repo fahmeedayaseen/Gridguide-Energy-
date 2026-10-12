@@ -77,9 +77,10 @@ function buildRatesResponse(cfg) {
         enterprise: { pct: cfg.leadSuccessFeeEnterprise ?? 0.05, display: `${Math.round((cfg.leadSuccessFeeEnterprise ?? 0.05) * 100)}%` },
       },
       successFee: {
-        free:       { pct: cfg.successFeeFree,       display: `${Math.round(cfg.successFeeFree       * 100)}%` },
-        pro:        { pct: cfg.successFeePro,        display: `${Math.round(cfg.successFeePro        * 100)}%` },
-        enterprise: { pct: cfg.successFeeEnterprise, display: `${Math.round(cfg.successFeeEnterprise * 100)}%` },
+        // Same rates as leadSuccessFees (mirrored); kept for older admin UI.
+        free:       { pct: cfg.leadSuccessFeeFree       ?? 0.10, display: `${Math.round((cfg.leadSuccessFeeFree       ?? 0.10) * 100)}%` },
+        pro:        { pct: cfg.leadSuccessFeePro        ?? 0.07, display: `${Math.round((cfg.leadSuccessFeePro        ?? 0.07) * 100)}%` },
+        enterprise: { pct: cfg.leadSuccessFeeEnterprise ?? 0.05, display: `${Math.round((cfg.leadSuccessFeeEnterprise ?? 0.05) * 100)}%` },
       },
       membershipFee: {
         free:       cfg.membershipFeeFree,
@@ -202,6 +203,18 @@ export async function PATCH(request) {
     data.monthlyRedemptionCapCredits = Math.round(data.monthlyRedemptionCapDollars * cpd);
   }
 
+  // Installer success fees: leadSuccessFee* is the single source of truth
+  // (lib/platform-config.js). The older successFee* columns are kept mirrored
+  // so an admin editing either field changes the rate installers are charged.
+  for (const tier of ["Free", "Pro", "Enterprise"]) {
+    const legacyKey = `successFee${tier}`, leadKey = `leadSuccessFee${tier}`;
+    if (data[legacyKey] !== undefined && data[leadKey] !== undefined && data[legacyKey] !== data[leadKey]) {
+      return err(`${legacyKey} and ${leadKey} are the same rate; send one value.`, 400);
+    }
+    if (data[legacyKey] !== undefined) data[leadKey] = data[legacyKey];
+    else if (data[leadKey] !== undefined) data[legacyKey] = data[leadKey];
+  }
+
   await prisma.platformConfig.upsert({
     where:  { id: "singleton" },
     update: { ...data, updatedBy: auth.user.id },
@@ -209,6 +222,16 @@ export async function PATCH(request) {
   });
 
   await invalidatePlatformConfigCache();
+
+  // Keep each installer's stored successFeeRate (display copy) in line with
+  // the plan rate that's actually charged.
+  const planByTier = { Free: "FREE", Pro: "PRO", Enterprise: "ENTERPRISE" };
+  for (const [tier, plan] of Object.entries(planByTier)) {
+    const rate = data[`leadSuccessFee${tier}`];
+    if (rate !== undefined) {
+      await prisma.installer.updateMany({ where: { plan }, data: { successFeeRate: rate } });
+    }
+  }
 
   const changedKeys = Object.keys(data);
   await prisma.userActivityLog.create({

@@ -15,7 +15,8 @@ const providers = [
 
 async function main() {
   for (const provider of providers) {
-    await prisma.vppProvider.upsert({ where: { key: provider.key }, update: provider, create: provider });
+    // create-only: re-running must not reset a live provider back to PENDING_CREDENTIALS.
+    await prisma.vppProvider.upsert({ where: { key: provider.key }, update: {}, create: provider });
   }
   console.log("VPP provider metadata seeded safely.");
 }

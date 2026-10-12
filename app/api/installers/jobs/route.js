@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getInstallerSuccessFeeRate, computeInstallerSuccessFee } from "@/lib/platform-config.js";
 
 const createSchema = z.object({
   leadId:       z.string().optional(),
@@ -81,23 +82,19 @@ export async function POST(request) {
   const { data, error } = await parseBody(request, createSchema);
   if (error) return err("Validation failed", 400, error);
 
-  // Lead success fee is tiered by plan and admin-adjustable via PlatformConfig.
-  // Falls back to hardcoded defaults if config unavailable.
-  // Free: 10%  |  Pro: 7%  |  Enterprise: 5%
-  let feeRates = { FREE: 0.10, PRO: 0.07, ENTERPRISE: 0.05 };
-  try {
-    const { getPlatformConfig } = await import("@/lib/platform-config.js");
-    const cfg = await getPlatformConfig();
-    if (cfg.leadSuccessFeeFree     != null) feeRates.FREE       = cfg.leadSuccessFeeFree;
-    if (cfg.leadSuccessFeePro      != null) feeRates.PRO        = cfg.leadSuccessFeePro;
-    if (cfg.leadSuccessFeeEnterprise != null) feeRates.ENTERPRISE = cfg.leadSuccessFeeEnterprise;
-  } catch {}
-  const LEAD_SUCCESS_FEES = feeRates;
-  const successFeeRate = LEAD_SUCCESS_FEES[installer.plan] ?? 0.08;
-
-  // Only apply the success fee to GridGuide-generated leads (not self-sourced jobs)
+  // Lead success fee is tiered by plan (Free 10% · Pro 7% · Enterprise 5%,
+  // admin-adjustable) — single source of truth in lib/platform-config.js.
+  // Only GridGuide-generated leads carry a fee, not self-sourced jobs.
+  if (data.leadId) {
+    const lead = await prisma.installerLead.findFirst({
+      where: { id: data.leadId, installerId: installer.id },
+      select: { id: true },
+    });
+    if (!lead) return err("Lead not found", 404);
+  }
   const isGridGuideLead = !!data.leadId;
-  const successFee = isGridGuideLead ? data.projectValue * successFeeRate : 0;
+  const successFeeRate = isGridGuideLead ? await getInstallerSuccessFeeRate(installer.plan) : 0;
+  const successFee = computeInstallerSuccessFee(data.projectValue, successFeeRate, { gridGuideSourced: isGridGuideLead });
 
   const job = await prisma.job.create({
     data: {

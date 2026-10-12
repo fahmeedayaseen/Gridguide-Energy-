@@ -8,19 +8,10 @@
  */
 import { ok, err }                   from "@/lib/auth.js";
 import { runMonthlyCommissionBatch } from "@/lib/installer-commission.js";
-import { requireSecret, IS_PROD }    from "@/lib/secrets.js";
+import { verifyCronRequest }         from "@/lib/secrets.js";
 
 export async function POST(request) {
-  let secret;
-  try {
-    secret = requireSecret("CRON_SECRET");
-  } catch {
-    return err("Server misconfigured — this job cannot run without CRON_SECRET set.", 500);
-  }
-  const authHeader = request.headers.get("authorization");
-  if (secret ? authHeader !== `Bearer ${secret}` : IS_PROD) {
-    return err("Unauthorized", 401);
-  }
+  if (!verifyCronRequest(request)) return err("Unauthorized", 401);
 
   const result = await runMonthlyCommissionBatch();
 
@@ -30,3 +21,7 @@ export async function POST(request) {
     processedCount:  result.processedCount,
   });
 }
+
+// Vercel Cron invokes scheduled paths with GET (see vercel.json). Exporting
+// only POST meant this job returned 405 and never ran on schedule.
+export const GET = POST;

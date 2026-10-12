@@ -26,7 +26,9 @@
     "db:seed:utilities": "node prisma/seed-utilities.js",
     "verify:env": "node scripts/verify-env.js",
     "test:geothermal": "node --test tests/geothermal-metrics.test.mjs",
-    "predeploy": "npm run verify:env && npm run db:migrate:prod"
+    "predeploy": "npm run verify:env && npm run db:migrate:prod",
+    "test": "node --import ./tests/helpers/register-alias.mjs --test tests/*.test.mjs",
+    "db:verify-migrations": "prisma migrate diff --from-url \"$DATABASE_URL\" --to-schema-datamodel prisma/schema.prisma --exit-code"
   },
   "dependencies": {
     "next": "14.2.0",
@@ -57,5 +59,8 @@
     "@types/node": "20.14.0",
     "eslint": "8.57.0",
     "eslint-config-next": "14.2.0"
+  },
+  "engines": {
+    "node": ">=20.11"
   }
 }

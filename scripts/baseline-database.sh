@@ -1,65 +1,62 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Baseline the Prisma migration history for an EXISTING database.
+# Move an EXISTING database onto the new migration history (run once per DB).
 #
-# Why this exists: this project's earliest tables were created with
-# `prisma db push` (schema synced directly to the DB, no migration file
-# recorded). Every migration in prisma/migrations/ from 20260626 onward is
-# real and incremental, but there's no "0_init" migration for everything
-# before that date — so on a FRESH/EMPTY database, `prisma migrate deploy`
-# fails immediately (it tries to ALTER tables that don't exist yet).
+# Background: prisma/migrations now starts with 0_init, a full baseline of the
+# schema at commit 22fe0dd. A brand-new empty database needs nothing special —
+# `npx prisma migrate deploy` builds it from 0_init.
 #
-# This script does NOT touch a database that already has data (e.g. your
-# current staging/prod DB provisioned via db push) — for that database, skip
-# this script entirely and just keep running `prisma migrate deploy` for
-# future migrations; the tables already match schema.prisma.
-#
-# Use this script when standing up a BRAND NEW database (e.g. a fresh
-# production instance) so `prisma migrate deploy` works cleanly from a
-# proper migration history, following Prisma's own documented "baselining"
-# procedure: https://www.prisma.io/docs/guides/database/baselining
+# A database that was built the old way (`prisma db push` + the archived
+# migrations) already HAS everything in 0_init. This script:
+#   1. Checks the database really matches the 0_init schema (aborts if not —
+#      drift must be fixed by hand first, never papered over)
+#   2. Marks 0_init as applied without running it
+#   3. Runs `prisma migrate deploy` to apply everything after 0_init
 #
 # Usage:
-#   DATABASE_URL="postgresql://...brand-new-empty-db..." ./scripts/baseline-database.sh
+#   DATABASE_URL="postgresql://..." ./scripts/baseline-database.sh
+# Take a backup/snapshot first.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 if [ -z "${DATABASE_URL:-}" ]; then
-  echo "Set DATABASE_URL to the NEW, EMPTY database you're baselining, then re-run."
+  echo "Set DATABASE_URL to the database you're moving onto the new history, then re-run."
   exit 1
 fi
 
-BASELINE_DIR="prisma/migrations/0_init"
-
-echo "This will:"
-echo "  1. Generate prisma/migrations/0_init/migration.sql from the current schema.prisma"
-echo "  2. Apply it directly to the database at DATABASE_URL"
-echo "  3. Mark it as already-applied in Prisma's migration history table"
-echo ""
 echo "Target database: $(echo "$DATABASE_URL" | sed -E 's#(://[^:]+:)[^@]+(@)#\1***\2#')"
-read -rp "Continue? [y/N] " CONFIRM
-if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
-  echo "Aborted."
-  exit 0
-fi
+read -rp "Backup taken and ready to continue? [y/N] " CONFIRM
+[ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] || { echo "Aborted."; exit 0; }
 
-mkdir -p "$BASELINE_DIR"
-
-echo "→ Generating baseline SQL from schema.prisma..."
+echo "→ Checking the database matches the 0_init baseline schema..."
+set +e
 npx prisma migrate diff \
-  --from-empty \
-  --to-schema-datamodel prisma/schema.prisma \
-  --script > "$BASELINE_DIR/migration.sql"
+  --from-url "$DATABASE_URL" \
+  --to-schema-datamodel prisma/migrations_archive/schema-at-0_init.prisma \
+  --exit-code > /tmp/gridguide-baseline-drift.txt 2>&1
+DIFF_STATUS=$?
+set -e
 
-echo "→ Applying baseline directly to the database..."
-npx prisma db execute --file "$BASELINE_DIR/migration.sql" --schema prisma/schema.prisma
+if [ "$DIFF_STATUS" -eq 2 ]; then
+  echo "✗ The database does not match the baseline schema. Differences:"
+  cat /tmp/gridguide-baseline-drift.txt
+  echo ""
+  echo "Resolve these first (e.g. apply any archived migration that never ran), then re-run."
+  exit 1
+elif [ "$DIFF_STATUS" -ne 0 ]; then
+  cat /tmp/gridguide-baseline-drift.txt
+  exit "$DIFF_STATUS"
+fi
+echo "✓ Database matches the baseline."
 
-echo "→ Marking 0_init as already applied in Prisma's migration history..."
+echo "→ Marking 0_init as already applied..."
 npx prisma migrate resolve --applied "0_init"
 
-echo "→ Verifying: running migrate deploy should now report 'No pending migrations'..."
+echo "→ Applying migrations after the baseline..."
 npx prisma migrate deploy
 
+echo "→ Final check: database matches the current schema.prisma..."
+npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
 echo ""
-echo "Done. This database now has a real migration history starting from 0_init."
-echo "Every migration from 20260626 onward will apply cleanly on top of it."
+echo "Done. Old rows for the archived migrations may remain in _prisma_migrations; they're harmless."

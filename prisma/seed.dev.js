@@ -11,6 +11,10 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  // Hard stop: demo accounts with known passwords must never reach a deployed database.
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+    throw new Error("seed.dev.js creates demo accounts and refuses to run in production.");
+  }
   console.log("🧪 Seeding GridGuide DEV database (demo data)...\n");
   console.log("⚠️  This seed is for LOCAL DEVELOPMENT ONLY. Never run in production.\n");
 

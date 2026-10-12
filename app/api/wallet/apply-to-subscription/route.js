@@ -6,15 +6,25 @@
  * the subscription; it's their money to use however they choose.
  *
  * Body: { amount: number }
+ * Optional header: Idempotency-Key — a retried/double-submitted request with
+ * the same key applies the money only once.
+ *
+ * The wallet debit and the Stripe credit are two-phase (see
+ * applyWalletToSubscription in lib/wallet.js): the debit can no longer
+ * succeed while the Stripe credit fails.
+ *
+ * Responses:
+ *   200 { status: "COMPLETED" } — credit is on the Stripe customer balance
+ *   202 { status: "PENDING" }   — Stripe outcome unknown; resolves automatically
+ *   4xx/502                    — nothing was taken from the wallet
  */
-import { prisma }                   from "@/lib/db.js";
 import { ok, err, parseBody }       from "@/lib/auth.js";
 import { authenticateRequest }      from "@/lib/jwt.js";
-import { applyWalletToSubscription } from "@/lib/wallet.js";
-import { stripe }                   from "@/lib/stripe.js";
+import { applyWalletToSubscription, getWalletBalance, WalletError } from "@/lib/wallet.js";
+import { logger }                   from "@/lib/sentry.js";
 import { z }                        from "zod";
 
-const schema = z.object({ amount: z.number().positive() });
+const schema = z.object({ amount: z.number().positive().max(100000) });
 
 export async function POST(request) {
   const auth = await authenticateRequest(request);
@@ -23,32 +33,31 @@ export async function POST(request) {
   const { data, error } = await parseBody(request, schema);
   if (error) return err("Validation failed", 400, error);
 
-  try {
-    const updated = await applyWalletToSubscription(auth.user.id, data.amount);
+  const rawKey = request.headers.get("idempotency-key");
+  const idempotencyKey = rawKey ? `${auth.user.id}:${rawKey.slice(0, 200)}` : undefined;
 
-    const user = await prisma.user.findUnique({
-      where:  { id: auth.user.id },
-      select: { stripeCustomerId: true },
-    });
-    if (user?.stripeCustomerId) {
-      try {
-        await stripe.invoiceItems.create({
-          customer:    user.stripeCustomerId,
-          amount:      -Math.round(data.amount * 100),
-          currency:    "usd",
-          description: `GridGuide wallet balance applied to subscription`,
-        });
-      } catch (e) {
-        console.error("[Wallet→Subscription] Stripe invoice item failed:", e.message);
-      }
+  try {
+    const result = await applyWalletToSubscription(auth.user.id, data.amount, { idempotencyKey });
+    const { balance } = await getWalletBalance(auth.user.id);
+
+    if (result.status === "PENDING") {
+      return ok({
+        status: "PENDING",
+        message: `$${result.amountApplied.toFixed(2)} is being applied to your subscription. This usually completes within a few minutes.`,
+        amountApplied:    result.amountApplied,
+        remainingBalance: balance,
+      }, 202);
     }
 
     return ok({
-      message: `$${data.amount.toFixed(2)} applied toward your subscription.`,
-      amountApplied:    data.amount,
-      remainingBalance: updated.balance,
+      status: "COMPLETED",
+      message: `$${result.amountApplied.toFixed(2)} applied toward your subscription.`,
+      amountApplied:    result.amountApplied,
+      remainingBalance: balance,
     });
   } catch (e) {
-    return err(e.message, 400);
+    if (e instanceof WalletError) return err(e.message, e.status);
+    logger.error("[Wallet→Subscription] Unexpected failure", { userId: auth.user.id, error: e?.message });
+    return err("Something went wrong applying your wallet balance. Please try again.", 500);
   }
 }

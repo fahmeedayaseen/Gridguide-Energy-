@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db.js";
 import { ok, err, parseBody } from "@/lib/auth.js";
 import { authenticateRequest, requireRole } from "@/lib/jwt.js";
 import { z } from "zod";
+import { getInstallerSuccessFeeRate, computeInstallerSuccessFee } from "@/lib/platform-config.js";
 
 const leadSchema = z.object({
   installerId:   z.string(),
@@ -69,14 +70,11 @@ export async function POST(request) {
     return err("Installer is not yet verified", 409);
   }
 
-  // Calculate success fee based on installer plan
-  const successFeeRates = {
-    BASIC: 0.09,  // midpoint of 8-10%
-    PRO:   0.06,  // midpoint of 5-7%
-    ENTERPRISE: 0.05,  // midpoint of 3-5%
-  };
-  const rate = successFeeRates[installer.plan] || 0.09;
-  const successFee = data.estimatedValue ? data.estimatedValue * rate : null;
+  // Estimated success fee on this GridGuide-sourced lead, from the single
+  // plan-tiered source of truth (Free 10% · Pro 7% · Enterprise 5%). The fee
+  // actually charged is computed again when the job is created.
+  const rate = await getInstallerSuccessFeeRate(installer.plan);
+  const successFee = data.estimatedValue ? computeInstallerSuccessFee(data.estimatedValue, rate) : null;
 
   const lead = await prisma.installerLead.create({
     data: { ...data, successFee },
