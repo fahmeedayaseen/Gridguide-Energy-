@@ -1,0 +1,39 @@
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: UNVERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: REVIEW,VERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: REVIEW,VERIFIED
+property=all readings=250 days=45 match=true
+property=p1 readings=167 days=45 match=true
+statuses seen: REVIEW,VERIFIED

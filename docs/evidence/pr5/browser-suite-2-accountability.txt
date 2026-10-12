@@ -1,0 +1,42 @@
+PASS  vendor-neutral title
+PASS  geothermal stays a featured card
+PASS  water claim UNVERIFIED (discharge missing)
+PASS  water saved / recycled share flagged UNVERIFIED
+PASS  overdue milestone counted
+PASS  resource mix lists geothermal (featured), wind and gas microgrid
+PASS  delivery vs contract shows geothermal delivered %
+PASS  wind with no deliveries shows dashes, not 0%
+PASS  contract POST carries resource/contract type, firm MW, water intensity
+PASS  delivery POST defaults end to next month (exclusive)
+PASS  asset POST: microgrid true + firm capacity
+PASS  reserve margin computed from firm sources (19 + 55 MW)
+PASS  build-out shortfall explained
+PASS  ramp table shows planned future months
+PASS  wind contract without firm MW listed as not counted
+PASS  ramp step POST
+PASS  site reserve requirement PATCH
+PASS  meters listed with preferred settlement badge
+PASS  ramp shows load data status from meters
+PASS  second preferred settlement meter rejected with the reason
+PASS  overdue permit flagged
+PASS  milestone POST
+PASS  milestone PATCH status
+PASS  who-pays summary: 80% customer
+PASS  shares over total blocked in UI
+PASS  cost allocation POST
+PASS  verification banner: UNVERIFIED + MISSING_MEASUREMENTS naming discharge
+PASS  formula version shown (provenance)
+PASS  water panel separates reclaimed imported from on-site recycling
+PASS  upstream water from geothermal intensity (12,000 MWh × 10)
+PASS  grid energy without intensity reported as not counted
+PASS  grid intensity PATCH with source
+PASS  readings form has discharge, reclaimed-imported and storage fields
+PASS  reading POST includes discharge, imported reclaimed, negative storage and meter
+PASS  complete, balanced water data → VERIFIED (no UNVERIFIED tags)
+PASS  7.3% variance → REVIEW with review flags
+PASS  mobile: no horizontal page overflow
+PASS  meter swap with monthly totals only → ESTIMATED, not COMPLETE
+PASS  estimate discloses the mid-month assumption
+PASS  footnote states the effective-service-date rule
+PASS  site with interval readings is not estimated
+PASS  no page/console errors

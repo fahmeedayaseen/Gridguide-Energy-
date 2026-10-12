@@ -1,0 +1,12 @@
+# node docs/evidence/pr5/harness/loadcheck.mjs lib/energy-water-meters.mjs — clean export of b405e0c, PostgreSQL 16.15, session TZ America/Indiana/Indianapolis
+readings inserted=10704 meters=10 sql rows=13
+s1 PASS got={"actualMw":35.948,"status":"COMPLETE","allocation":"METER_EFFECTIVE_DATES","intervals":2,"measuredMwh":26745}
+   intervals: 10-01T00:00→10-15T12:30 s1A 20 MW COMPLETE | 10-15T12:30→11-01T00:00 s1B 50 MW COMPLETE
+s2 PASS got={"actualMw":40,"status":"COMPLETE","allocation":"METER_EFFECTIVE_DATES","intervals":0,"measuredMwh":29760}
+s3 PASS got={"actualMw":30,"status":"COMPLETE","allocation":"METER_EFFECTIVE_DATES","intervals":0,"measuredMwh":22320}
+s4 PASS got={"actualMw":50,"status":"ESTIMATED","allocation":"MID_MONTH_ESTIMATE","intervals":0,"measuredMwh":37200}
+   assumption: Meter coverage changed during 2026-10, but the readings could not be split at the meters' effective dates (only monthly totals were available, or a reading spans a meter change). Load uses the meter configuration active at mid-month (2026-10-16: s4B) and is an estimate, not a verified figure.
+s5 PASS got={"actualMw":40.968,"status":"PARTIAL","allocation":"METER_EFFECTIVE_DATES","intervals":2,"measuredMwh":30480}
+   intervals: 10-01T00:00→10-15T00:00 s5A 30 MW PARTIAL | 10-15T00:00→11-01T00:00 s5A+s5B 50 MW COMPLETE
+s6 PASS got={"actualMw":10,"status":"COMPLETE","allocation":"METER_EFFECTIVE_DATES","intervals":0,"measuredMwh":7440}
+ALL PASS

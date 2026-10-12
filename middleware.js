@@ -102,6 +102,12 @@ const API_KEY_ROUTES = [
   { path: "/api/enterprise/geothermal/readings", methods: ["GET", "POST"] },
   { path: "/api/enterprise/geothermal/assets", methods: ["GET"] },
   { path: "/api/enterprise/geothermal/properties", methods: ["GET"] },
+  { path: "/api/enterprise/geothermal/ppas", methods: ["GET"] },
+  { path: "/api/enterprise/energy-water/readings", methods: ["GET", "POST"] },
+  { path: "/api/enterprise/energy-water/assets", methods: ["GET"] },
+  { path: "/api/enterprise/energy-water/properties", methods: ["GET"] },
+  { path: "/api/enterprise/energy-water/contracts", methods: ["GET"] },
+  { path: "/api/enterprise/energy-water/deliveries", methods: ["GET", "POST"] },
 ];
 
 function isApiKeyRequest(request) {
