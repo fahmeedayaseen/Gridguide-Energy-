@@ -1,0 +1,28 @@
+PASS  overview renders PUE from paired readings (1.2)
+PASS  unreported water shows 'No data', not 0
+PASS  no '+%' artefact on stat cards
+PASS  property filter sends propertyId
+PASS  filtered property with no data shows empty state
+PASS  custom range asks for dates first
+PASS  custom range sends from/to
+PASS  typing in a form keeps focus (full value entered)
+PASS  asset POST sends blank capacity as blank (null after validation)
+PASS  new asset listed
+PASS  edit form prefilled
+PASS  asset PATCH to /assets/a1 with status RETIRED
+PASS  asset DELETE sent
+PASS  PPA POST converts dates to ISO
+PASS  PPA listed with contract value
+PASS  readings list shows existing reading
+PASS  save disabled until a measurement is entered
+PASS  reading POST sends null for blank fields (not 0)
+PASS  reading edit prefilled
+PASS  reading DELETE sent
+PASS  CSV: 1 valid row, 3 problems reported
+PASS  CSV: unknown property named
+PASS  CSV: missing measurements flagged
+PASS  CSV upload: source CSV, stable externalId, blank water null
+PASS  API instructions show curl with property id
+PASS  Manage API keys switches tab
+PASS  mobile: no horizontal page overflow
+PASS  no page/console errors

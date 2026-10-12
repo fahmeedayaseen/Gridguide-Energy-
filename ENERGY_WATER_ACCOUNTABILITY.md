@@ -17,16 +17,36 @@ The Enterprise portal tab is **Energy & Water**. The canonical API is `/api/ente
 | Direct cooling water and upstream generation water | Water tab | Direct = on-site readings. Upstream = delivered MWh × a user-entered water intensity (gal/MWh) per contract, plus grid MWh × the site's grid intensity; each figure carries its source. No default factors are filled in; energy without an intensity is reported as "not counted". |
 | Renewable, geothermal, nuclear and gas in one portfolio | Portfolio tab | Mix by resource: contracts, contracted MW, firm MW, microgrid MW, delivered MWh; carbon-free share of delivered energy, with unknown-mix energy shown separately rather than assumed. |
 
-### Verified water claims
+### Verified water claims (formula `water-balance-v2`)
 
-Verified water claims require **withdrawal, consumption, discharge and reclaimed-water** measurements. For the selected period a claim is:
+Required on **every** water reading in the period: potable water withdrawn (`waterWithdrawnGallons`), reclaimed water imported (`waterReclaimedImportedGallons`), water recycled on site (`waterRecycledGallons`), water consumed (`waterConsumedGallons`) and water discharged (`waterDischargedGallons`). Storage change (`waterStorageChangeGallons`, signed) is optional and treated as zero when absent (reason `STORAGE_CHANGE_NOT_REPORTED`).
 
-- **VERIFIED** — every reading that reports any water figure reports all four (`waterWithdrawnGallons`, `waterConsumedGallons`, `waterDischargedGallons`, `waterRecycledGallons`), and the balance closes: new water withdrawn ≈ consumed + discharged, within 10%.
-- **INCOMPLETE** — some water readings are missing one of the four (the missing fields are named).
-- **UNBALANCED** — all four are present but the balance doesn't close.
-- **NO_DATA** — no water readings.
+Balance: **potable withdrawn + reclaimed imported ≈ consumed + discharged + storage change.** On-site recycling is an internal loop and is never counted as an input.
+Variance % = |inputs − outputs| ÷ max(inputs, 1) × 100.
 
-Until a period is VERIFIED, WUE, recycled-water share and water saved vs. baseline are labelled **UNVERIFIED** in the UI. Reclaimed/recycled water is reused on site and tracked separately; it is not part of withdrawal.
+| Status | Condition | Product behaviour |
+|---|---|---|
+| VERIFIED | all required present, variance ≤ 5% | WUE, recycled share, water saved shown as verified |
+| REVIEW | all required present, 5% < variance ≤ 10% | shown with a REVIEW flag, no verified badge |
+| UNVERIFIED | a required measurement missing, or variance > 10% | flagged UNVERIFIED; missing/imbalanced inputs named |
+
+API status object (`metrics.waterClaim`, `water.claim`): `verification_status`, `missing_measurements`, `balance_variance_pct`, `verification_reasons` (`{code, message}`), `formula_version`, `calculated_at`, `thresholds`, `balance`. WUE, recycled share and water saved inherit the period's status (`waterEvidenceStatus`). Portfolio views expose the **least-trusted** site (`combineWaterClaims`), so partial data never rolls up into a verified claim; `siteWaterClaims` lists each site.
+
+Water volumes may be sent in `gal` (default), `L` or `m3` via `waterUnit`; they're stored in gallons and the input unit is kept in the reading's `metadata.provenance`.
+
+### Meters and actual load (formula `load-ramp-v2-meters`)
+
+`EnterpriseMeter` records each electricity meter: level (MAIN, SETTLEMENT, SUB, CHECK), parent, coverage % of site load, interval, effective dates, settlement priority, and whether it's the preferred (authoritative) settlement meter. Readings can name their `meterId`.
+
+- Site load sums only top-level MAIN/SETTLEMENT meters. SUB and CHECK meters are never added.
+- A preferred settlement meter in service is used alone (lowest priority number, then id, if several).
+- Saving a meter is refused if the summed main meters would cover more than 100% of the site at the same time, if a SUB meter has no parent, if the parent chain would loop, or if two preferred settlement meters overlap in time.
+- Duplicate readings for the same meter and timestamp are collapsed (latest update wins).
+- Nothing is scaled up: each month reports `COMPLETE`, `PARTIAL` (a counted meter missing, or less than 100% coverage) or `UNAVAILABLE`, with data and meter coverage.
+- Sites with no meters keep the legacy rule (site-level readings with no asset).
+- If meters change mid-month, the month uses the meters in service at mid-month.
+
+Evidence for this module's acceptance is in `docs/evidence/pr5/`. Rollback scripts: `prisma/rollbacks/`.
 
 ### New API routes (Oct 12, 2026)
 
@@ -39,6 +59,7 @@ Until a period is VERIFIED, WUE, recycled-water share and water saved vs. baseli
 | `/api/enterprise/energy-water/milestones` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ |
 | `/api/enterprise/energy-water/cost-allocations` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ |
 | `/api/enterprise/energy-water/properties` · `/:id` | GET · PATCH (reserve requirement, grid water intensity + source) | Viewer+/API key · Manager+ |
+| `/api/enterprise/energy-water/meters` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ (validated against the site's other meters) |
 | `/api/enterprise/energy-water/{dashboard,assets,readings}` | as before | aliases of the geothermal routes |
 
 Calculations live in `lib/energy-water-portfolio.mjs` (pure, unit-tested); validation in `lib/energy-water-schemas.js`. Migration: `prisma/migrations/20261012_energy_water_accountability`.

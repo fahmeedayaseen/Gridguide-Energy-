@@ -1,0 +1,737 @@
+TAP version 13
+# (node:1283) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/jwt.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# node:internal/modules/run_main:123
+#     triggerUncaughtException(
+#     ^
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'jsonwebtoken' imported from /tmp/claude-0/evidence/lib/jwt.js
+#     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+#     at packageResolve (node:internal/modules/esm/resolve:767:81)
+#     at moduleResolve (node:internal/modules/esm/resolve:853:18)
+#     at defaultResolve (node:internal/modules/esm/resolve:983:11)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at resolve (file:///tmp/claude-0/evidence/tests/helpers/alias-hooks.mjs:9:10)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at Hooks.resolve (node:internal/modules/esm/hooks:240:30)
+#     at handleMessage (node:internal/modules/esm/worker:199:24)
+#     at Immediate.checkForMessages (node:internal/modules/esm/worker:141:28) {
+#   code: 'ERR_MODULE_NOT_FOUND'
+# }
+# Node.js v22.22.0
+# Subtest: tests/auth-tokens.test.mjs
+not ok 1 - tests/auth-tokens.test.mjs
+  ---
+  duration_ms: 140.938868
+  type: 'test'
+  location: '/tmp/claude-0/evidence/tests/auth-tokens.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: legacy /geothermal/dashboard still exports GET
+ok 2 - legacy /geothermal/dashboard still exports GET
+  ---
+  duration_ms: 2.345771
+  type: 'test'
+  ...
+# Subtest: /energy-water/dashboard re-exports the same handlers as /geothermal/dashboard
+ok 3 - /energy-water/dashboard re-exports the same handlers as /geothermal/dashboard
+  ---
+  duration_ms: 0.473954
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/assets still exports GET, POST
+ok 4 - legacy /geothermal/assets still exports GET, POST
+  ---
+  duration_ms: 0.167455
+  type: 'test'
+  ...
+# Subtest: /energy-water/assets re-exports the same handlers as /geothermal/assets
+ok 5 - /energy-water/assets re-exports the same handlers as /geothermal/assets
+  ---
+  duration_ms: 0.219795
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/assets/[id] still exports DELETE, PATCH
+ok 6 - legacy /geothermal/assets/[id] still exports DELETE, PATCH
+  ---
+  duration_ms: 0.133302
+  type: 'test'
+  ...
+# Subtest: /energy-water/assets/[id] re-exports the same handlers as /geothermal/assets/[id]
+ok 7 - /energy-water/assets/[id] re-exports the same handlers as /geothermal/assets/[id]
+  ---
+  duration_ms: 0.169434
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/ppas still exports GET, POST
+ok 8 - legacy /geothermal/ppas still exports GET, POST
+  ---
+  duration_ms: 0.243203
+  type: 'test'
+  ...
+# Subtest: /energy-water/contracts re-exports the same handlers as /geothermal/ppas
+ok 9 - /energy-water/contracts re-exports the same handlers as /geothermal/ppas
+  ---
+  duration_ms: 0.092271
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/ppas/[id] still exports DELETE, PATCH
+ok 10 - legacy /geothermal/ppas/[id] still exports DELETE, PATCH
+  ---
+  duration_ms: 0.24685
+  type: 'test'
+  ...
+# Subtest: /energy-water/contracts/[id] re-exports the same handlers as /geothermal/ppas/[id]
+ok 11 - /energy-water/contracts/[id] re-exports the same handlers as /geothermal/ppas/[id]
+  ---
+  duration_ms: 0.384085
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/readings still exports GET, POST
+ok 12 - legacy /geothermal/readings still exports GET, POST
+  ---
+  duration_ms: 1.099237
+  type: 'test'
+  ...
+# Subtest: /energy-water/readings re-exports the same handlers as /geothermal/readings
+ok 13 - /energy-water/readings re-exports the same handlers as /geothermal/readings
+  ---
+  duration_ms: 0.256709
+  type: 'test'
+  ...
+# Subtest: legacy /geothermal/readings/[id] still exports DELETE, PATCH
+ok 14 - legacy /geothermal/readings/[id] still exports DELETE, PATCH
+  ---
+  duration_ms: 0.120485
+  type: 'test'
+  ...
+# Subtest: /energy-water/readings/[id] re-exports the same handlers as /geothermal/readings/[id]
+ok 15 - /energy-water/readings/[id] re-exports the same handlers as /geothermal/readings/[id]
+  ---
+  duration_ms: 0.093813
+  type: 'test'
+  ...
+# Subtest: legacy geothermal/properties route still exists
+ok 16 - legacy geothermal/properties route still exists
+  ---
+  duration_ms: 0.098694
+  type: 'test'
+  ...
+# Subtest: API keys keep working on legacy integration paths
+ok 17 - API keys keep working on legacy integration paths
+  ---
+  duration_ms: 0.178211
+  type: 'test'
+  ...
+# Subtest: existing response fields are preserved for old clients
+ok 18 - existing response fields are preserved for old clients
+  ---
+  duration_ms: 0.200046
+  type: 'test'
+  ...
+# (node:1291) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/geothermal-schemas.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: old readings payloads (no new water fields, no meterId) still validate
+ok 19 - old readings payloads (no new water fields, no meterId) still validate
+  ---
+  duration_ms: 45.652194
+  type: 'test'
+  ...
+# Subtest: the Enterprise nav keeps the existing tab id so saved links (?tab=geothermal) open the new screen
+ok 20 - the Enterprise nav keeps the existing tab id so saved links (?tab=geothermal) open the new screen
+  ---
+  duration_ms: 8.920079
+  type: 'test'
+  ...
+# (node:1299) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/integrations.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# node:internal/modules/run_main:123
+#     triggerUncaughtException(
+#     ^
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'axios' imported from /tmp/claude-0/evidence/lib/integrations.js
+#     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+#     at packageResolve (node:internal/modules/esm/resolve:767:81)
+#     at moduleResolve (node:internal/modules/esm/resolve:853:18)
+#     at defaultResolve (node:internal/modules/esm/resolve:983:11)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at resolve (file:///tmp/claude-0/evidence/tests/helpers/alias-hooks.mjs:9:10)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at Hooks.resolve (node:internal/modules/esm/hooks:240:30)
+#     at MessagePort.handleMessage (node:internal/modules/esm/worker:199:24)
+#     at [nodejs.internal.kHybridDispatch] (node:internal/event_target:845:20) {
+#   code: 'ERR_MODULE_NOT_FOUND'
+# }
+# Node.js v22.22.0
+# Subtest: tests/device-type.test.mjs
+not ok 3 - tests/device-type.test.mjs
+  ---
+  duration_ms: 146.230058
+  type: 'test'
+  location: '/tmp/claude-0/evidence/tests/device-type.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# (node:1307) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/energy-water-meter-routes.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: meter create schema requires level, coverage bounds and an effective date
+ok 22 - meter create schema requires level, coverage bounds and an effective date # SKIP
+  ---
+  duration_ms: 0.512237
+  type: 'test'
+  ...
+# Subtest: two non-overlapping main meters aggregate
+ok 23 - two non-overlapping main meters aggregate
+  ---
+  duration_ms: 1.174189
+  type: 'test'
+  ...
+# Subtest: overlapping main-meter coverage is rejected
+ok 24 - overlapping main-meter coverage is rejected
+  ---
+  duration_ms: 1.503132
+  type: 'test'
+  ...
+# Subtest: parent/sub-meter coverage is de-duplicated: sub-meters never add to site load
+ok 25 - parent/sub-meter coverage is de-duplicated: sub-meters never add to site load
+  ---
+  duration_ms: 0.344442
+  type: 'test'
+  ...
+# Subtest: CHECK meters are never summed
+ok 26 - CHECK meters are never summed
+  ---
+  duration_ms: 0.171936
+  type: 'test'
+  ...
+# Subtest: a preferred settlement meter is authoritative on its own (deterministic tie-break)
+ok 27 - a preferred settlement meter is authoritative on its own (deterministic tie-break)
+  ---
+  duration_ms: 0.449809
+  type: 'test'
+  ...
+# Subtest: two preferred settlement meters with overlapping dates are rejected
+ok 28 - two preferred settlement meters with overlapping dates are rejected
+  ---
+  duration_ms: 0.157597
+  type: 'test'
+  ...
+# Subtest: partial coverage and missing meters are reported, never scaled up
+ok 29 - partial coverage and missing meters are reported, never scaled up
+  ---
+  duration_ms: 0.244541
+  type: 'test'
+  ...
+# Subtest: legacy sites without meters use unassigned readings; sites with meters ignore them
+ok 30 - legacy sites without meters use unassigned readings; sites with meters ignore them
+  ---
+  duration_ms: 0.147837
+  type: 'test'
+  ...
+# Subtest: hierarchy validation: sub needs a parent, no loops, coverage bounds, dates
+ok 31 - hierarchy validation: sub needs a parent, no loops, coverage bounds, dates
+  ---
+  duration_ms: 0.356434
+  type: 'test'
+  ...
+# Subtest: contracted MWh: MW × hours × capacity factor, clipped to the delivery window
+ok 32 - contracted MWh: MW × hours × capacity factor, clipped to the delivery window
+  ---
+  duration_ms: 0.985282
+  type: 'test'
+  ...
+# Subtest: contracted MWh prefers the stated annual MWh
+ok 33 - contracted MWh prefers the stated annual MWh
+  ---
+  duration_ms: 0.131249
+  type: 'test'
+  ...
+# Subtest: delivery performance compares only reported periods
+ok 34 - delivery performance compares only reported periods
+  ---
+  duration_ms: 0.494938
+  type: 'test'
+  ...
+# Subtest: resource mix: carbon-free share counts only known carbon-free energy
+ok 35 - resource mix: carbon-free share counts only known carbon-free energy
+  ---
+  duration_ms: 0.365678
+  type: 'test'
+  ...
+# Subtest: ramp: planned load is the step in effect; actual is energy ÷ covered hours
+ok 36 - ramp: planned load is the step in effect; actual is energy ÷ covered hours
+  ---
+  duration_ms: 1.752757
+  type: 'test'
+  ...
+# Subtest: reserve margin uses only entered firm capacity, now and at build-out
+ok 37 - reserve margin uses only entered firm capacity, now and at build-out
+  ---
+  duration_ms: 0.435606
+  type: 'test'
+  ...
+# Subtest: reserve margin is null without firm capacity or a load plan
+ok 38 - reserve margin is null without firm capacity or a load plan
+  ---
+  duration_ms: 0.258084
+  type: 'test'
+  ...
+# Subtest: cost allocation: customer vs ratepayer shares and unallocated remainder
+ok 39 - cost allocation: customer vs ratepayer shares and unallocated remainder
+  ---
+  duration_ms: 0.309624
+  type: 'test'
+  ...
+# Subtest: upstream water only uses entered intensities and reports uncovered energy
+ok 40 - upstream water only uses entered intensities and reports uncovered energy
+  ---
+  duration_ms: 0.388791
+  type: 'test'
+  ...
+# Subtest: milestones: overdue, upcoming and expiring permits
+ok 41 - milestones: overdue, upcoming and expiring permits
+  ---
+  duration_ms: 1.539515
+  type: 'test'
+  ...
+# Subtest: monthsBetween spans year boundaries
+ok 42 - monthsBetween spans year boundaries
+  ---
+  duration_ms: 0.23143
+  type: 'test'
+  ...
+# Subtest: reserve margin names every missing input instead of guessing
+ok 43 - reserve margin names every missing input instead of guessing
+  ---
+  duration_ms: 0.304526
+  type: 'test'
+  ...
+# Subtest: ramp comparison carries meter-based load status when given siteMonthlyLoad output
+ok 44 - ramp comparison carries meter-based load status when given siteMonthlyLoad output
+  ---
+  duration_ms: 0.273056
+  type: 'test'
+  ...
+# (node:1331) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/energy-water-schemas.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: cost shares can't exceed the total
+ok 45 - cost shares can't exceed the total
+  ---
+  duration_ms: 2.497275
+  type: 'test'
+  ...
+# Subtest: deliveries need periodEnd after periodStart and at most ~13 months
+ok 46 - deliveries need periodEnd after periodStart and at most ~13 months
+  ---
+  duration_ms: 1.265308
+  type: 'test'
+  ...
+# Subtest: delivery batches report failing rows
+ok 47 - delivery batches report failing rows
+  ---
+  duration_ms: 1.785342
+  type: 'test'
+  ...
+# Subtest: milestones accept only http(s) reference links
+ok 48 - milestones accept only http(s) reference links
+  ---
+  duration_ms: 0.607465
+  type: 'test'
+  ...
+# Subtest: ramp steps require a site, date, phase and planned load
+ok 49 - ramp steps require a site, date, phase and planned load
+  ---
+  duration_ms: 0.256074
+  type: 'test'
+  ...
+# Subtest: contracts accept any resource type; assets parse the microgrid flag from forms
+ok 50 - contracts accept any resource type; assets parse the microgrid flag from forms
+  ---
+  duration_ms: 0.532167
+  type: 'test'
+  ...
+# Subtest: readings accept water discharge
+ok 51 - readings accept water discharge
+  ---
+  duration_ms: 0.331916
+  type: 'test'
+  ...
+# Subtest: water volumes in litres or m³ are normalized to gallons with provenance
+ok 52 - water volumes in litres or m³ are normalized to gallons with provenance
+  ---
+  duration_ms: 0.607441
+  type: 'test'
+  ...
+# Subtest: storage change may be negative; other water fields may not
+ok 53 - storage change may be negative; other water fields may not
+  ---
+  duration_ms: 0.462745
+  type: 'test'
+  ...
+# Subtest: readings accept a meterId; contracts accept an evidence reference
+ok 54 - readings accept a meterId; contracts accept an evidence reference
+  ---
+  duration_ms: 0.498181
+  type: 'test'
+  ...
+# (node:1339) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/field-encryption.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: round-trips bank details and never stores plaintext
+ok 55 - round-trips bank details and never stores plaintext
+  ---
+  duration_ms: 2.578261
+  type: 'test'
+  ...
+# Subtest: uses a fresh IV every time
+ok 56 - uses a fresh IV every time
+  ---
+  duration_ms: 0.43914
+  type: 'test'
+  ...
+# Subtest: detects tampering
+ok 57 - detects tampering
+  ---
+  duration_ms: 0.432583
+  type: 'test'
+  ...
+# Subtest: rejects a wrong key
+ok 58 - rejects a wrong key
+  ---
+  duration_ms: 0.395517
+  type: 'test'
+  ...
+# Subtest: rejects a malformed key
+ok 59 - rejects a malformed key
+  ---
+  duration_ms: 0.672134
+  type: 'test'
+  ...
+# Subtest: calculates PUE, WUE, geothermal coverage, and recycled water share
+ok 60 - calculates PUE, WUE, geothermal coverage, and recycled water share
+  ---
+  duration_ms: 2.02123
+  type: 'test'
+  ...
+# Subtest: returns null efficiency ratios instead of fake zeroes without denominators
+ok 61 - returns null efficiency ratios instead of fake zeroes without denominators
+  ---
+  duration_ms: 0.292784
+  type: 'test'
+  ...
+# Subtest: recycled water share uses on-site recycled / (potable + reclaimed imported + recycled)
+ok 62 - recycled water share uses on-site recycled / (potable + reclaimed imported + recycled)
+  ---
+  duration_ms: 0.335485
+  type: 'test'
+  ...
+# Subtest: recycled water share is null unless the reading has complete water data
+ok 63 - recycled water share is null unless the reading has complete water data
+  ---
+  duration_ms: 0.247797
+  type: 'test'
+  ...
+# Subtest: recycled water share is null when no water volumes are reported
+ok 64 - recycled water share is null when no water volumes are reported
+  ---
+  duration_ms: 1.174831
+  type: 'test'
+  ...
+# Subtest: recycled water share never exceeds 100%
+ok 65 - recycled water share never exceeds 100%
+  ---
+  duration_ms: 0.277347
+  type: 'test'
+  ...
+# Subtest: estimates a priced PPA and leaves confidential pricing unknown
+ok 66 - estimates a priced PPA and leaves confidential pricing unknown
+  ---
+  duration_ms: 0.268607
+  type: 'test'
+  ...
+# Subtest: totals are null for measurements nobody reported
+ok 67 - totals are null for measurements nobody reported
+  ---
+  duration_ms: 0.154727
+  type: 'test'
+  ...
+# Subtest: ratios only use readings that reported both inputs
+ok 68 - ratios only use readings that reported both inputs
+  ---
+  duration_ms: 0.331647
+  type: 'test'
+  ...
+# Subtest: an explicit zero is a real measurement, null/blank is not
+ok 69 - an explicit zero is a real measurement, null/blank is not
+  ---
+  duration_ms: 0.342005
+  type: 'test'
+  ...
+# Subtest: merged daily aggregates equal one aggregate over all readings
+ok 70 - merged daily aggregates equal one aggregate over all readings
+  ---
+  duration_ms: 1.626791
+  type: 'test'
+  ...
+# Subtest: SQL row shape converts to the same metrics as the JS path
+ok 71 - SQL row shape converts to the same metrics as the JS path
+  ---
+  duration_ms: 1.019411
+  type: 'test'
+  ...
+# Subtest: aggregate SQL binds every value as a parameter
+ok 72 - aggregate SQL binds every value as a parameter
+  ---
+  duration_ms: 0.456765
+  type: 'test'
+  ...
+# Subtest: status object has the documented fields
+ok 73 - status object has the documented fields
+  ---
+  duration_ms: 0.237673
+  type: 'test'
+  ...
+# Subtest: missing waterWithdrawnGallons yields UNVERIFIED and names the field
+ok 74 - missing waterWithdrawnGallons yields UNVERIFIED and names the field
+  ---
+  duration_ms: 0.14448
+  type: 'test'
+  ...
+# Subtest: missing waterConsumedGallons yields UNVERIFIED and names the field
+ok 75 - missing waterConsumedGallons yields UNVERIFIED and names the field
+  ---
+  duration_ms: 0.074079
+  type: 'test'
+  ...
+# Subtest: missing waterDischargedGallons yields UNVERIFIED and names the field
+ok 76 - missing waterDischargedGallons yields UNVERIFIED and names the field
+  ---
+  duration_ms: 0.058924
+  type: 'test'
+  ...
+# Subtest: missing waterReclaimedImportedGallons yields UNVERIFIED and names the field
+ok 77 - missing waterReclaimedImportedGallons yields UNVERIFIED and names the field
+  ---
+  duration_ms: 0.055346
+  type: 'test'
+  ...
+# Subtest: 4.9% variance verifies, 5.1% needs review, 10.1% is unverified (5.0 / 10.0 are inclusive)
+ok 78 - 4.9% variance verifies, 5.1% needs review, 10.1% is unverified (5.0 / 10.0 are inclusive)
+  ---
+  duration_ms: 0.22427
+  type: 'test'
+  ...
+# Subtest: onsite recycled water is NOT an input; imported reclaimed water IS
+ok 79 - onsite recycled water is NOT an input; imported reclaimed water IS
+  ---
+  duration_ms: 0.121855
+  type: 'test'
+  ...
+# Subtest: storage change closes the balance and is flagged when not reported
+ok 80 - storage change closes the balance and is flagged when not reported
+  ---
+  duration_ms: 0.189978
+  type: 'test'
+  ...
+# Subtest: no water readings is UNVERIFIED with a reason, and energy-only readings don't count
+ok 81 - no water readings is UNVERIFIED with a reason, and energy-only readings don't count
+  ---
+  duration_ms: 0.094226
+  type: 'test'
+  ...
+# Subtest: WUE, recycled share and water saved inherit the period's evidence status
+ok 82 - WUE, recycled share and water saved inherit the period's evidence status
+  ---
+  duration_ms: 0.666783
+  type: 'test'
+  ...
+# Subtest: portfolio claim exposes the least-trusted site
+ok 83 - portfolio claim exposes the least-trusted site
+  ---
+  duration_ms: 0.533424
+  type: 'test'
+  ...
+# Subtest: SQL rows grouped by property produce a least-trusted combined claim
+ok 84 - SQL rows grouped by property produce a least-trusted combined claim
+  ---
+  duration_ms: 0.668077
+  type: 'test'
+  ...
+# (node:1355) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/geothermal-schemas.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: blank form fields become null, not zero
+ok 85 - blank form fields become null, not zero
+  ---
+  duration_ms: 2.392763
+  type: 'test'
+  ...
+# Subtest: a reading needs at least one measurement
+ok 86 - a reading needs at least one measurement
+  ---
+  duration_ms: 1.09027
+  type: 'test'
+  ...
+# Subtest: rejects negative values, unknown fields and far-future timestamps
+ok 87 - rejects negative values, unknown fields and far-future timestamps
+  ---
+  duration_ms: 1.017827
+  type: 'test'
+  ...
+# Subtest: batch validation reports the failing row numbers
+ok 88 - batch validation reports the failing row numbers
+  ---
+  duration_ms: 2.41539
+  type: 'test'
+  ...
+# Subtest: batch limit is enforced
+ok 89 - batch limit is enforced
+  ---
+  duration_ms: 0.305524
+  type: 'test'
+  ...
+# Subtest: PPA delivery window must not end before it starts
+ok 90 - PPA delivery window must not end before it starts
+  ---
+  duration_ms: 0.481685
+  type: 'test'
+  ...
+# Subtest: update schemas accept partial edits but not empty ones
+ok 91 - update schemas accept partial edits but not empty ones
+  ---
+  duration_ms: 0.33568
+  type: 'test'
+  ...
+# (node:1363) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/platform-config.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# node:internal/modules/run_main:123
+#     triggerUncaughtException(
+#     ^
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@prisma/client' imported from /tmp/claude-0/evidence/lib/db.js
+#     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+#     at packageResolve (node:internal/modules/esm/resolve:767:81)
+#     at moduleResolve (node:internal/modules/esm/resolve:853:18)
+#     at defaultResolve (node:internal/modules/esm/resolve:983:11)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at resolve (file:///tmp/claude-0/evidence/tests/helpers/alias-hooks.mjs:9:10)
+#     at nextResolve (node:internal/modules/esm/hooks:748:28)
+#     at Hooks.resolve (node:internal/modules/esm/hooks:240:30)
+#     at MessagePort.handleMessage (node:internal/modules/esm/worker:199:24)
+#     at [nodejs.internal.kHybridDispatch] (node:internal/event_target:845:20) {
+#   code: 'ERR_MODULE_NOT_FOUND'
+# }
+# Node.js v22.22.0
+# Subtest: tests/installer-fees.test.mjs
+not ok 11 - tests/installer-fees.test.mjs
+  ---
+  duration_ms: 123.12133
+  type: 'test'
+  location: '/tmp/claude-0/evidence/tests/installer-fees.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# (node:1371) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///tmp/claude-0/evidence/lib/secrets.js?case=0 is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /tmp/claude-0/evidence/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# [GridGuide] Missing required environment variable CRON_SECRET. This endpoint authenticates via a shared secret and rejects all requests without it.
+# [GridGuide] Missing required environment variable CRON_SECRET. This endpoint authenticates via a shared secret and rejects all requests without it.
+# Subtest: cron: rejects when CRON_SECRET is unset, even outside production
+ok 93 - cron: rejects when CRON_SECRET is unset, even outside production
+  ---
+  duration_ms: 13.406304
+  type: 'test'
+  ...
+# Subtest: cron: accepts only the exact bearer secret
+ok 94 - cron: accepts only the exact bearer secret
+  ---
+  duration_ms: 3.049988
+  type: 'test'
+  ...
+# [GridGuide] CRON_SECRET is not set — check bypassed because ALLOW_INSECURE_DEV_SECRETS=true. Never set that on a deployed environment.
+# [GridGuide] Missing required environment variable CRON_SECRET. This endpoint authenticates via a shared secret and rejects all requests without it.
+# Subtest: dev bypass works only when explicitly enabled and never in production
+ok 95 - dev bypass works only when explicitly enabled and never in production
+  ---
+  duration_ms: 4.026481
+  type: 'test'
+  ...
+# Subtest: concurrent donations cannot overdraw the wallet
+ok 96 - concurrent donations cannot overdraw the wallet # SKIP
+  ---
+  duration_ms: 0.596448
+  type: 'test'
+  ...
+# Subtest: apply-to-subscription: success debits once and records COMPLETED
+ok 97 - apply-to-subscription: success debits once and records COMPLETED # SKIP
+  ---
+  duration_ms: 0.174177
+  type: 'test'
+  ...
+# Subtest: apply-to-subscription: Stripe rejection refunds the wallet
+ok 98 - apply-to-subscription: Stripe rejection refunds the wallet # SKIP
+  ---
+  duration_ms: 0.11326
+  type: 'test'
+  ...
+# Subtest: apply-to-subscription: ambiguous failure stays PENDING, reconcile completes it
+ok 99 - apply-to-subscription: ambiguous failure stays PENDING, reconcile completes it # SKIP
+  ---
+  duration_ms: 0.151327
+  type: 'test'
+  ...
+# Subtest: apply-to-subscription: no Stripe customer means nothing is debited
+ok 100 - apply-to-subscription: no Stripe customer means nothing is debited # SKIP
+  ---
+  duration_ms: 0.077491
+  type: 'test'
+  ...
+# Subtest: withdrawal: details encrypted, lifecycle moves money correctly
+ok 101 - withdrawal: details encrypted, lifecycle moves money correctly # SKIP
+  ---
+  duration_ms: 0.116537
+  type: 'test'
+  ...
+# Subtest: withdrawal: failure and user cancel return the money exactly once
+ok 102 - withdrawal: failure and user cancel return the money exactly once # SKIP
+  ---
+  duration_ms: 0.126873
+  type: 'test'
+  ...
+# Subtest: withdrawal: invalid routing number and unavailable methods are rejected before any debit
+ok 103 - withdrawal: invalid routing number and unavailable methods are rejected before any debit # SKIP
+  ---
+  duration_ms: 0.207839
+  type: 'test'
+  ...
+1..103
+# tests 103
+# suites 0
+# pass 91
+# fail 3
+# cancelled 0
+# skipped 9
+# todo 0
+# duration_ms 2024.701592
