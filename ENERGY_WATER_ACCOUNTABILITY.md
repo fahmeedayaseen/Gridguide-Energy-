@@ -1,4 +1,52 @@
-# GridGuide Geothermal Energy & Water Module
+# GridGuide Data-Center Energy & Water Accountability
+
+**Positioning:** a vendor-neutral data-center energy and water accountability platform, not a geothermal product. It tracks every resource serving a site — geothermal, solar, wind, hydro, nuclear, gas, storage and grid supply — in one portfolio. Geothermal stays a featured resource category (★ in the UI, its own overview card).
+
+The Enterprise portal tab is **Energy & Water**. The canonical API is `/api/enterprise/energy-water/*`; the original `/api/enterprise/geothermal/*` routes still work as aliases.
+
+## What it manages
+
+| Need | Where | How |
+|---|---|---|
+| Multiple generation contracts serving one data center | Contracts tab | Contracts carry `resourceType` (GEOTHERMAL, SOLAR, WIND, HYDRO, NUCLEAR, GAS, DIESEL, STORAGE, GRID_MIX, OTHER) and `contractType` (PPA, virtual PPA, utility tariff, sleeved, capacity, reserve, tolling, behind-the-meter). Any number per site. |
+| Private-microgrid resources and contracted reserve margins | Assets + Load & Reserve tabs | Assets can be flagged `microgrid` with accredited `firmCapacityKw`; contracts carry `firmCapacityMw`. Each site has a `requiredReserveMarginPct`. Reserve margin = (firm capacity − peak load) ÷ peak load, now and at full build-out, with the extra firm MW needed. Only firm values a user entered count; resources without one are listed as "not counted". |
+| Load ramp from construction through peak operation | Load & Reserve tab | Ramp steps (`effectiveDate`, phase, planned average MW, planned peak MW). Monthly planned vs actual load; actual = site-level facility kWh ÷ hours covered by readings, with data coverage shown and low-coverage months flagged. |
+| Permits, regulatory milestones, transmission approvals | Permits tab | Category (permit, filing, rate case, interconnection, transmission, environmental, water rights, zoning), agency, docket, status, due/filed/decided/expiry dates, link. Overdue, due-in-90-days and expiring-approval counts. |
+| Customer-versus-ratepayer cost allocation | Costs tab | Each cost item: total, customer share, ratepayer share, other share, basis (tariff, contract, commission order, settlement, estimate), status and source reference. Shares can't exceed the total; unallocated remainder is shown. |
+| Actual delivery vs contracted MW and MWh | Contracts (record) + Portfolio (compare) | Deliveries per settlement period (`deliveredMwh`, optional peak MW and curtailment), entered by hand or posted by a settlement feed. Compared against contracted MWh for the same periods (stated annual MWh, else MW × hours × capacity factor within the delivery window). Unreported periods are never counted as shortfall. |
+| Direct cooling water and upstream generation water | Water tab | Direct = on-site readings. Upstream = delivered MWh × a user-entered water intensity (gal/MWh) per contract, plus grid MWh × the site's grid intensity; each figure carries its source. No default factors are filled in; energy without an intensity is reported as "not counted". |
+| Renewable, geothermal, nuclear and gas in one portfolio | Portfolio tab | Mix by resource: contracts, contracted MW, firm MW, microgrid MW, delivered MWh; carbon-free share of delivered energy, with unknown-mix energy shown separately rather than assumed. |
+
+### Verified water claims
+
+Verified water claims require **withdrawal, consumption, discharge and reclaimed-water** measurements. For the selected period a claim is:
+
+- **VERIFIED** — every reading that reports any water figure reports all four (`waterWithdrawnGallons`, `waterConsumedGallons`, `waterDischargedGallons`, `waterRecycledGallons`), and the balance closes: new water withdrawn ≈ consumed + discharged, within 10%.
+- **INCOMPLETE** — some water readings are missing one of the four (the missing fields are named).
+- **UNBALANCED** — all four are present but the balance doesn't close.
+- **NO_DATA** — no water readings.
+
+Until a period is VERIFIED, WUE, recycled-water share and water saved vs. baseline are labelled **UNVERIFIED** in the UI. Reclaimed/recycled water is reused on site and tracked separately; it is not part of withdrawal.
+
+### New API routes (Oct 12, 2026)
+
+| Route | Methods | Who |
+|---|---|---|
+| `/api/enterprise/energy-water/portfolio?days=` or `?from=&to=` (+ `propertyId`) | GET | Viewer+ |
+| `/api/enterprise/energy-water/contracts` · `/:id` | GET POST · PATCH DELETE | GET also API key (no pricing) · writes Manager+ |
+| `/api/enterprise/energy-water/deliveries` · `/:id` | GET POST · PATCH DELETE | GET/POST also API key (upsert by externalId) · Manager+ |
+| `/api/enterprise/energy-water/ramp-steps` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ |
+| `/api/enterprise/energy-water/milestones` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ |
+| `/api/enterprise/energy-water/cost-allocations` · `/:id` | GET POST · PATCH DELETE | Viewer+ · Manager+ |
+| `/api/enterprise/energy-water/properties` · `/:id` | GET · PATCH (reserve requirement, grid water intensity + source) | Viewer+/API key · Manager+ |
+| `/api/enterprise/energy-water/{dashboard,assets,readings}` | as before | aliases of the geothermal routes |
+
+Calculations live in `lib/energy-water-portfolio.mjs` (pure, unit-tested); validation in `lib/energy-water-schemas.js`. Migration: `prisma/migrations/20261012_energy_water_accountability`.
+
+---
+
+## Original module notes (geothermal, readings, CSV, API keys)
+
 
 This release adds an enterprise module for tracking geothermal generation, data-center energy use, cooling water, emissions avoidance, and geothermal power-purchase agreements (PPAs).
 
