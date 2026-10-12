@@ -11,7 +11,7 @@ Everything here was produced from the commits below; the raw outputs are in this
 |---|---|---|
 | #3 P0 security & money paths | `p0-security-money-paths` | `abf2127436b7f1c9700030ac8faaaacc3d303299` |
 | #4 Geothermal module completion (base: #3) | `geothermal-complete` | `d6f64ddcfe086f82bb8c4ae0361e12177c1e69f5` |
-| #5 Energy & Water accountability (base: #4) | `energy-water-portfolio` | code at `5fc79f4e419e2189c7610086e56fa9ab44c519a1`; the commit that adds this folder contains documentation and evidence files only |
+| #5 Energy & Water accountability (base: #4) | `energy-water-portfolio` | code at `b405e0c895fe29979b8c3918f5af2f7999c429e9` (interval-split load rule; previous code commit `5fc79f4`); the evidence commit after it contains documentation and evidence files only |
 
 Why the earlier review saw "the earlier geothermal-focused implementation": the review package was taken from `main`. None of #3–#5 is merged yet, so `main` still has the original code. Review the branches above (or the PR diffs) instead.
 
@@ -53,7 +53,7 @@ See `environment.txt`: Node 22.22.0 · Ubuntu 24.04.5 · PostgreSQL 16.15 · Chr
 
 ### Unit and calculation tests — `unit-tests.tap.txt`
 
-`node --import ./tests/helpers/register-alias.mjs --test tests/*.test.mjs` on a clean export of `5fc79f4`: **103 tests — 91 pass, 3 fail, 9 skipped.**
+`node --import ./tests/helpers/register-alias.mjs --test tests/*.test.mjs` on a clean export of `b405e0c`: **112 tests — 100 pass, 3 fail, 9 skipped.**
 
 | Test file | Pass | Fail | Skip | Notes |
 |---|---|---|---|---|
@@ -61,8 +61,8 @@ See `environment.txt`: Node 22.22.0 · Ubuntu 24.04.5 · PostgreSQL 16.15 · Chr
 | `tests/backward-compat.test.mjs` | 19 | 0 | 0 |  |
 | `tests/device-type.test.mjs` | 0 | 1 | 0 | Cannot find package 'axios' — PR #3 test; runs in CI after npm ci |
 | `tests/energy-water-meter-routes.test.mjs` | 0 | 0 | 1 | needs Prisma client (runs in CI) |
-| `tests/energy-water-meters.test.mjs` | 9 | 0 | 0 |  |
-| `tests/energy-water-portfolio.test.mjs` | 13 | 0 | 0 |  |
+| `tests/energy-water-meters.test.mjs` | 17 | 0 | 0 | incl. 8 interval-split / ESTIMATED tests |
+| `tests/energy-water-portfolio.test.mjs` | 14 | 0 | 0 |  |
 | `tests/energy-water-schemas.test.mjs` | 10 | 0 | 0 |  |
 | `tests/field-encryption.test.mjs` | 5 | 0 | 0 |  |
 | `tests/geothermal-metrics.test.mjs` | 25 | 0 | 0 |  |
@@ -75,7 +75,20 @@ The 3 failures are PR #3 files that can't load here because their npm packages a
 
 ### SQL ↔ in-memory parity — `sql-vs-js-parity.txt`
 
-The dashboard/portfolio aggregate in PostgreSQL (one row per day × site). 13 randomized datasets (2 queries each, session time zone America/Indiana/Indianapolis) produced the same metrics, daily trend, per-site water claims and least-trusted combined claim as the in-memory calculation (to within a cent of float rounding). All three statuses were exercised through SQL (VERIFIED, REVIEW, UNVERIFIED).
+Run on `5fc79f4`; the water calculation and its SQL are unchanged since. The dashboard/portfolio aggregate in PostgreSQL (one row per day × site). 13 randomized datasets (2 queries each, session time zone America/Indiana/Indianapolis) produced the same metrics, daily trend, per-site water claims and least-trusted combined claim as the in-memory calculation (to within a cent of float rounding). All three statuses were exercised through SQL (VERIFIED, REVIEW, UNVERIFIED).
+
+### Load split at meter effective dates — `load-interval-split.txt`
+
+`harness/loadcheck.mjs` inserts 10,704 readings into PostgreSQL 16.15, runs the portfolio load SQL (`buildLoadIntervalSql`, non-UTC session time zone) and feeds `siteMonthlyLoad()`. Each site is compared with a value worked out by hand. **6 / 6 pass:**
+
+| Site | Scenario | Expected → result |
+|---|---|---|
+| s1 | Main meter swapped Oct 15 12:30 (15-min readings); retired meter keeps reporting at 99 MW | 20 MW before + 50 MW after, time-weighted = 35.948 MW, COMPLETE, 2 intervals; retired meter's readings not counted (the old mid-month rule would have reported 50 MW) |
+| s2 | Parent + sub-meter (from Oct 10) + check meter | 40 MW (parent only), no split |
+| s3 | Duplicate readings per meter+timestamp | latest update wins: 30 MW |
+| s4 | Meter change Oct 10, monthly totals only | **ESTIMATED**, mid-month meter (B) = 50 MW, assumption disclosed |
+| s5 | Second main meter (40%) added Oct 15 | 30 MW (PARTIAL, 60%) then 50 MW (COMPLETE) → 40.968 MW, PARTIAL |
+| s6 | Site with no meters | legacy site-level readings: 10 MW |
 
 ### PostgreSQL migrations — `postgres-migration-roundtrip.txt`
 
@@ -84,10 +97,10 @@ Limitation: until the Prisma-generated `0_init` baseline is committed (needs npm
 
 ### Browser checks — `browser-suite-*.txt`, `screenshots/`
 
-The real `EntGeothermal` component, compiled from `5fc79f4`, rendered in headless Chromium against an in-browser mock API that uses the real calculation libraries:
+The real `EntGeothermal` component, compiled from `b405e0c`, rendered in headless Chromium against an in-browser mock API that uses the real calculation libraries:
 
 - Suite 1 (module basics, from #4): **28 / 28 pass**
-- Suite 2 (accountability + review changes): **38 / 38 pass**, including VERIFIED → REVIEW → UNVERIFIED transitions on the Water tab, missing-measurement messaging, preferred-settlement-meter rejection, meter selection and signed storage on readings
+- Suite 2 (accountability + review changes): **42 / 42 pass**, including a site whose meter was swapped mid-month with only a monthly total → ESTIMATED badge, disclosed mid-month assumption and the effective-service-date footnote (`screenshots/accountability-p10-load-estimated.png`); VERIFIED → REVIEW → UNVERIFIED transitions on the Water tab, missing-measurement messaging, preferred-settlement-meter rejection, meter selection and signed storage on readings
 - Zero page or console errors in both suites. Screenshots for every tab, missing-input states, the review state and mobile width are in `screenshots/`.
 
 Limitation: the API is mocked in these runs; the API routes themselves have not been exercised against a live database (needs Prisma client — CI).
@@ -122,7 +135,7 @@ Limitation: the API is mocked in these runs; the API routes themselves have not 
 ## Reproduce
 
 ```bash
-git checkout 5fc79f4e419e2189c7610086e56fa9ab44c519a1
+git checkout b405e0c895fe29979b8c3918f5af2f7999c429e9
 npm ci                                     # or link node_modules/zod only, as here
 npm test                                   # unit + calculation + compat tests
 PGURL=postgresql://user:pass@localhost:5432/postgres tests/db/migration-roundtrip.sh

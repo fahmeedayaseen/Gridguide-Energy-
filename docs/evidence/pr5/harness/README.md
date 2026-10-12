@@ -14,3 +14,5 @@ node run2.mjs   # suite 2 (index2.html loading bundle2.js)
 ```
 
 **SQL parity** — `node sqlcheck.mjs lib/geothermal-metrics.mjs` (and `TIERS=1 …`) against a Postgres database with an `EnterpriseSustainabilityReading` table; compares the SQL aggregation with the in-memory calculation on random data.
+
+**Load split at meter effective dates** — `node loadcheck.mjs /abs/path/lib/energy-water-meters.mjs` against the same database (needs the `EnterpriseMeter` table from migration `20261013`). Inserts readings for six scenarios, runs `buildLoadIntervalSql` + `siteMonthlyLoad()` and compares with hand-worked expected values.

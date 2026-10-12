@@ -35,4 +35,8 @@ PASS  reading POST includes discharge, imported reclaimed, negative storage and 
 PASS  complete, balanced water data → VERIFIED (no UNVERIFIED tags)
 PASS  7.3% variance → REVIEW with review flags
 PASS  mobile: no horizontal page overflow
+PASS  meter swap with monthly totals only → ESTIMATED, not COMPLETE
+PASS  estimate discloses the mid-month assumption
+PASS  footnote states the effective-service-date rule
+PASS  site with interval readings is not estimated
 PASS  no page/console errors
